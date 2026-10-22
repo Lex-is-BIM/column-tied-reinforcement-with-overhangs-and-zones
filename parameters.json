@@ -1,0 +1,245 @@
+{
+  "metadata": {
+    "defaultName": "Армирование колонны с выпусками и зонами усиления",
+    "description": "Шаблон стиля армирования колонны с вязаным каркасом, замкнутыми хомутами, настраиваемыми зонами усиления и выпусками продольной арматуры.",
+    "version": "1.0.0",
+    "author": "Renga Software"
+  },
+  "styleParameters": [
+    {
+      "name": "General",
+      "text": "Общие",
+      "params": [
+        {
+          "name": "TopCover",
+          "text": "Защитный слой верхней грани",
+          "type": "Length",
+          "default": 25,
+          "min": 0,
+          "max": 100
+        },
+        {
+          "name": "BottomCover",
+          "text": "Защитный слой нижней грани",
+          "type": "Length",
+          "default": 25,
+          "min": 0,
+          "max": 100
+        },
+        {
+          "name": "AxisDistanceSide",
+          "text": "Расстояние от боковой грани до оси продольной арматуры",
+          "type": "Length",
+          "default": 50,
+          "min": 25,
+          "max": 100
+        },
+        {
+          "name": "ReinforcementZones",
+          "text": "Зоны усиления",
+          "type": "UserEnum",
+          "items": [
+            { "key": "none",   "text": "Отсутствуют" },
+            { "key": "top",    "text": "Сверху" },
+            { "key": "bottom", "text": "Снизу" },
+            { "key": "both",   "text": "Сверху и снизу" }
+          ],
+          "default": "none"
+        },
+        {
+          "name": "MinRebarLength",
+          "text": "Минимальная длина стержня",
+          "type": "Length",
+          "default": 100,
+          "min": 10,
+          "max": 1000
+        }
+      ]
+    },
+    {
+      "name": "LongitudinalRebars",
+      "text": "Продольная арматура каркаса",
+      "params": [
+        {
+          "name": "Step",
+          "text": "Шаг",
+          "type": "Length",
+          "default": 200,
+          "min": 50,
+          "max": 1000
+        },
+        {
+          "name": "CornerRebarStyleId",
+          "text": "Угловые арматурные стержни",
+          "type": "Id",
+          "entityTypeId": "608edb78-96f3-40a6-a0ec-71000105581b"
+        },
+        {
+          "name": "CornerRebarMark",
+          "text": "Марка угловых арматурных стержней",
+          "type": "String",
+          "default": "С1"
+        },
+        {
+          "name": "AdditionalRebarStyleId",
+          "text": "Дополнительные арматурные стержни",
+          "type": "Id",
+          "entityTypeId": "608edb78-96f3-40a6-a0ec-71000105581b"
+        },
+        {
+          "name": "AdditionalRebarMark",
+          "text": "Марка дополнительных арматурных стержней",
+          "type": "String",
+          "default": "С2"
+        },
+        {
+          "name": "FreeEnd",
+          "text": "Свободный конец",
+          "type": "Length",
+          "default": 25,
+          "min": 0,
+          "max": 100
+        },
+        {
+          "name": "TopOverhangEnabled",
+          "text": "Выпуск арматуры вверх",
+          "type": "UserEnum",
+          "items": [
+            { "key": "yes", "text": "Да" },
+            { "key": "no",  "text": "Нет" }
+          ],
+          "default": "yes"
+        },
+        {
+          "name": "AnchorageFactor",
+          "text": "Коэффициент анкеровки, d",
+          "type": "Real",
+          "default": 40,
+          "min": 20,
+          "max": 60
+        },
+        {
+          "name": "UseOverhangDisplacement",
+          "text": "Смещение выпусков на величину разбежки",
+          "type": "UserEnum",
+          "items": [
+            { "key": "yes", "text": "Да" },
+            { "key": "no",  "text": "Нет" }
+          ],
+          "default": "yes"
+        },
+        {
+          "name": "BendOverhang",
+          "text": "Отгиб выпусков на диаметр стержня",
+          "type": "UserEnum",
+          "items": [
+            { "key": "top",    "text": "Сверху" },
+            { "key": "bottom", "text": "Снизу" },
+            { "key": "none",   "text": "Отсутствует" }
+          ],
+          "default": "none"
+        }
+      ]
+    },
+    {
+      "name": "TransverseRebars",
+      "text": "Поперечная арматура каркаса",
+      "params": [
+        {
+          "name": "ClosedStirrupStyleId",
+          "text": "Замкнутый хомут",
+          "type": "Id",
+          "entityTypeId": "608edb78-96f3-40a6-a0ec-71000105581b"
+        },
+        {
+          "name": "ClosedStirrupMark",
+          "text": "Марка замкнутого хомута",
+          "type": "String",
+          "default": "Х1"
+        },
+        {
+          "name": "BendAngle",
+          "text": "Угол отгиба",
+          "type": "UserEnum",
+          "items": [
+            { "key": "180", "text": "180°" },
+            { "key": "135", "text": "135°" }
+          ],
+          "default": "180"
+        },
+        {
+          "name": "BendLengthFactor",
+          "text": "Длина отгиба, d",
+          "type": "Real",
+          "default": 10,
+          "min": 5,
+          "max": 30
+        },
+        {
+          "name": "MiddleZoneFirstStep",
+          "text": "Шаг первого стержня средней зоны",
+          "type": "Length",
+          "default": 200,
+          "min": 50,
+          "max": 1000
+        },
+        {
+          "name": "ReinforcementZones",
+          "text": "Зоны усиления",
+          "type": "UserEnum",
+          "items": [
+            { "key": "none",   "text": "Отсутствуют" },
+            { "key": "top",    "text": "Сверху" },
+            { "key": "bottom", "text": "Снизу" },
+            { "key": "both",   "text": "Сверху и снизу" }
+          ],
+          "default": "none"
+        }
+      ]
+    },
+    {
+      "name": "TopZone",
+      "text": "Зона усиления вверху",
+      "params": [
+        {
+          "name": "Step",
+          "text": "Шаг",
+          "type": "Length",
+          "default": 100,
+          "min": 50,
+          "max": 500
+        },
+        {
+          "name": "ZoneSize",
+          "text": "Размер зоны",
+          "type": "Length",
+          "default": 1000,
+          "min": 100,
+          "max": 10000
+        }
+      ]
+    },
+    {
+      "name": "BottomZone",
+      "text": "Зона усиления внизу",
+      "params": [
+        {
+          "name": "Step",
+          "text": "Шаг",
+          "type": "Length",
+          "default": 100,
+          "min": 50,
+          "max": 500
+        },
+        {
+          "name": "ZoneSize",
+          "text": "Размер зоны",
+          "type": "Length",
+          "default": 1000,
+          "min": 100,
+          "max": 10000
+        }
+      ]
+    }
+  ]
+}
