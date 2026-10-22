@@ -52,10 +52,6 @@ function createClosedStirrupCurve(point3D, rebarsCenterWidth, rebarsCenterDepth,
 
     local rotateAxis = Axis3D(point3D, Vector3D(0, 0, 1))
 
-    if not bendAngleDeg then
-        bendAngleDeg = 135
-    end
-
     -- ============================================================
     -- 1. НАЧАЛЬНЫЙ КРЮК (Угол c1, Z = z0)
     -- ============================================================
@@ -157,18 +153,17 @@ function createClosedStirrupCurve(point3D, rebarsCenterWidth, rebarsCenterDepth,
     return stirrupCurve:Rotate(rotateAxis, angle)
 end
 
-
 -- ============================================================
 -- Очищенная раскладка стержней строго от zoneBottom до zoneTop по осям
 -- ============================================================
 function createRebarLayoutWithDobor(container, rebarStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-    longStyleId, zoneBottom, zoneTop, step, useDobor)
+    bendAngleDeg, longStyleId, zoneBottom, zoneTop, step, useDobor)
     local r = getRebarRadius(rebarStyleId)
 
     local function addStirrupAt(z)
         local anchor = Point3D(-rebarsCenterWidth / 2, -rebarsCenterDepth / 2, z)
         local curve = createClosedStirrupCurve(anchor, rebarsCenterWidth, rebarsCenterDepth, 0, bendFactor,
-            rebarStyleId, longStyleId, 135)
+            rebarStyleId, longStyleId, bendAngleDeg)
         container:AddRebar(rebarStyleId, curve)
     end
 
@@ -208,6 +203,7 @@ function createTransverseStirrups(container, styleParameters, cornerX, cornerY, 
     local stirrupStyleId = transParams.ClosedStirrupStyleId
     local bendFactor = transParams.BendLengthFactor
     local mainStep = transParams.MiddleZoneFirstStep
+    local bendAngleDeg = tonumber(transParams.BendAngle)
 
     local general = styleParameters.General
     local zones = general.ReinforcementZones
@@ -258,7 +254,7 @@ function createTransverseStirrups(container, styleParameters, cornerX, cornerY, 
     -- 1. Зоны усиления отсутствуют (none) или аварийный сброс
     if zones == "none" then
         createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            longStyleId, Z_axis_bottom, Z_axis_top, mainStep, true)
+            bendAngleDeg, longStyleId, Z_axis_bottom, Z_axis_top, mainStep, true)
 
         -- 2. Усиление только сверху (top)
     elseif zones == "top" and isZonesValid then
@@ -266,9 +262,9 @@ function createTransverseStirrups(container, styleParameters, cornerX, cornerY, 
         local axisBorderTop = columnHeight - topZoneSize
 
         createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            longStyleId, Z_axis_bottom, axisBorderTop, mainStep, false)
+            bendAngleDeg, longStyleId, Z_axis_bottom, axisBorderTop, mainStep, false)
         createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            longStyleId, axisBorderTop, Z_axis_top, topZoneStep, true)
+            bendAngleDeg, longStyleId, axisBorderTop, Z_axis_top, topZoneStep, true)
 
         -- 3. Усиление только снизу (bottom)
     elseif zones == "bottom" and isZonesValid then
@@ -276,9 +272,9 @@ function createTransverseStirrups(container, styleParameters, cornerX, cornerY, 
         local axisBorderBottom = bottomZoneSize
 
         createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            longStyleId, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false)
+            bendAngleDeg, longStyleId, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false)
         createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            longStyleId, axisBorderBottom, Z_axis_top, mainStep, true)
+            bendAngleDeg, longStyleId, axisBorderBottom, Z_axis_top, mainStep, true)
 
         -- 4. Усиление и сверху, и снизу (both)
     elseif zones == "both" and isZonesValid then
@@ -288,11 +284,11 @@ function createTransverseStirrups(container, styleParameters, cornerX, cornerY, 
         local axisBorderTop = columnHeight - topZoneSize
 
         createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            longStyleId, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false)
+            bendAngleDeg, longStyleId, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false)
         createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            longStyleId, axisBorderBottom, axisBorderTop, mainStep, false)
+            bendAngleDeg, longStyleId, axisBorderBottom, axisBorderTop, mainStep, false)
         createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            longStyleId, axisBorderTop, Z_axis_top, topZoneStep, true)
+            bendAngleDeg, longStyleId, axisBorderTop, Z_axis_top, topZoneStep, true)
     end
 end
 
@@ -320,6 +316,7 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
         container:AddRebar(cornerStyleId, curve:Clone():Shift(c.x, c.y, 0))
     end
 end
+
 -- ============================================================
 -- Основная функция плагина Renga STDL
 -- ============================================================
