@@ -294,26 +294,91 @@ end
 
 -- ============================================================
 -- Создание продольных стержней
+-- Поддерживает прямой стержень, отгиб сверху и отгиб снизу с нахлесткой
 -- ============================================================
-function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, zBottom, zTop)
+function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, columnHeight)
+    local general = styleParameters.General
     local longParams = styleParameters.LongitudinalRebars
     local cornerStyleId = longParams.CornerRebarStyleId
-    local curve = CreateLineSegment3D(Point3D(0, 0, zBottom), Point3D(0, 0, zTop))
-    local corners = {{
-        x = -cornerX,
-        y = -cornerY
-    }, {
-        x = -cornerX,
-        y = cornerY
-    }, {
-        x = cornerX,
-        y = -cornerY
-    }, {
-        x = cornerX,
-        y = cornerY
-    }}
+    local bendOverhang = longParams.BendOverhang or "none"
+
+    local longR = getRebarRadius(cornerStyleId)
+    local d = 2 * longR
+    local lAnchorage = d * longParams.AnchorageFactor
+
+    -- 1. Высотные границы стержня:
+    -- Низ стержня всегда строго на защитном слое (без выпусков вниз)
+    local zBottom = general.BottomCover
+
+    -- Верхняя отметка: либо выпуск вверх, либо под защитный слой
+    local zTop
+    if longParams.TopOverhangEnabled == "yes" then
+        zTop = columnHeight + lAnchorage
+    else
+        zTop = columnHeight - general.TopCover
+    end
+
+    if zTop <= zBottom then
+        return
+    end
+
+    -- 2. Параметры утки (уклон 1:6 по СП 63)
+    local hCrank = 6 * d
+    local shiftXY = d * math.cos(math.pi / 4)
+    local rBending = 2.5 * d
+
+    local corners = {
+        { x = -cornerX, y = -cornerY, dirX =  1, dirY =  1 }, -- Низ-лево
+        { x = -cornerX, y =  cornerY, dirX =  1, dirY = -1 }, -- Верх-лево
+        { x =  cornerX, y = -cornerY, dirX = -1, dirY =  1 }, -- Низ-право
+        { x =  cornerX, y =  cornerY, dirX = -1, dirY = -1 }  -- Верх-право
+    }
+
     for _, c in ipairs(corners) do
-        container:AddRebar(cornerStyleId, curve:Clone():Shift(c.x, c.y, 0))
+        local dx = c.dirX * shiftXY
+        local dy = c.dirY * shiftXY
+        local curve = nil
+
+        if bendOverhang == "top" and longParams.TopOverhangEnabled == "yes" and (columnHeight - hCrank) > zBottom then
+            -- ========================================================
+            -- 1. ОТГИБ СВЕРХУ:
+            -- p1 -> p2: ствол стержня по базовой оси угла
+            -- p2 -> p3: наклонная утка 1:6 внутрь (конец строго на верху колонны)
+            -- p3 -> p4: вертикальный выпуск на длину анкеровки
+            -- ========================================================
+            local p1 = Point3D(c.x, c.y, zBottom)
+            local p2 = Point3D(c.x, c.y, columnHeight - hCrank)
+            local p3 = Point3D(c.x + dx, c.y + dy, columnHeight)
+            local p4 = Point3D(c.x + dx, c.y + dy, zTop)
+
+            local polyline = CreatePolyline3D({ p1, p2, p3, p4 })
+            FilletCorners3D(polyline, rBending)
+            curve = polyline
+
+        elseif bendOverhang == "bottom" and (zBottom + lAnchorage + hCrank) < zTop then
+            -- ========================================================
+            -- 2. ОТГИБ СНИЗУ:
+            -- p1 -> p2: вертикальный участок нахлестки (lAnchorage) со смещением внутрь
+            -- p2 -> p3: наклонная утка 1:6 (hCrank) наружу на базовую ось угла
+            -- p3 -> p4: основной ствол стержня по базовой оси угла до верха
+            -- ========================================================
+            local p1 = Point3D(c.x + dx, c.y + dy, zBottom)
+            local p2 = Point3D(c.x + dx, c.y + dy, zBottom + lAnchorage)
+            local p3 = Point3D(c.x, c.y, zBottom + lAnchorage + hCrank)
+            local p4 = Point3D(c.x, c.y, zTop)
+
+            local polyline = CreatePolyline3D({ p1, p2, p3, p4 })
+            FilletCorners3D(polyline, rBending)
+            curve = polyline
+
+        else
+            -- ========================================================
+            -- 3. ПРЯМОЙ СТЕРЖЕНЬ (none)
+            -- ========================================================
+            curve = CreateLineSegment3D(Point3D(c.x, c.y, zBottom), Point3D(c.x, c.y, zTop))
+        end
+
+        container:AddRebar(cornerStyleId, curve)
     end
 end
 
@@ -326,6 +391,7 @@ function CreateObjectReinforcement(object, styleParameters)
     if GetTypeName(profile) ~= "RectangularProfile" then
         return result
     end
+
     local halfWidth = profile.Width / 2
     local halfDepth = profile.Height / 2
     local general = styleParameters.General
@@ -335,21 +401,13 @@ function CreateObjectReinforcement(object, styleParameters)
     if cornerX <= 0 or cornerY <= 0 then
         return result
     end
+
     local columnHeight = GetParameterValue(object, "ColumnHeight")
-    local zBottom = general.BottomCover
-    local zTop = columnHeight - general.TopCover
-    local longParams = styleParameters.LongitudinalRebars
-    if longParams.TopOverhangEnabled == "yes" then
-        local longRebarRadius = getRebarRadius(longParams.CornerRebarStyleId)
-        local anchorageFactor = longParams.AnchorageFactor
-        zTop = zTop + longRebarRadius * 2 * anchorageFactor
-    end
-    if zTop <= zBottom then
-        return result
-    end
+
     -- 1. Продольные стержни
-    createLongitudinalRebars(result, styleParameters, cornerX, cornerY, zBottom, zTop)
+    createLongitudinalRebars(result, styleParameters, cornerX, cornerY, columnHeight)
     -- 2. Поперечные хомуты
     createTransverseStirrups(result, styleParameters, cornerX, cornerY, columnHeight)
+
     return result
 end
