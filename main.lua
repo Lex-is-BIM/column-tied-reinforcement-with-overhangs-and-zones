@@ -7,43 +7,40 @@ local MIN_REBAR_CLEARANCE = 25
 
 function SetStyleParameterStates(parameters)
     local values = parameters:GetParameterValues()
-    local zones = values.General.ReinforcementZones
-    local transZones = values.TransverseRebars.ReinforcementZones
-
-    local showTopZone = (zones == "top" or zones == "both") or (transZones == "top" or transZones == "both")
-    local showBottomZone = (zones == "bottom" or zones == "both") or (transZones == "bottom" or transZones == "both")
+    local zones = values.TransverseRebars.ReinforcementZones
 
     local grpTop = parameters:GetParameterGroup("TopZone")
-    if grpTop then grpTop:SetVisible(showTopZone) end
+    if grpTop then grpTop:SetVisible(zones == "top" or zones == "both") end
     local grpBottom = parameters:GetParameterGroup("BottomZone")
-    if grpBottom then grpBottom:SetVisible(showBottomZone) end
+    if grpBottom then grpBottom:SetVisible(zones == "bottom" or zones == "both") end
 
-    -- Промежуточные стержни
     local countX = tonumber(values.LongitudinalRebars.AdditionalRebarsCountX) or 0
     local countY = tonumber(values.LongitudinalRebars.AdditionalRebarsCountY) or 0
-    local hasAdditional = (countX > 0 or countY > 0)
+    local hasAdditional = countX > 0 or countY > 0
 
     local pAddStyle = parameters:GetParameter("LongitudinalRebars", "AdditionalRebarStyleId")
     if pAddStyle then pAddStyle:SetVisible(hasAdditional) end
     local pAddMark = parameters:GetParameter("LongitudinalRebars", "AdditionalRebarMark")
     if pAddMark then pAddMark:SetVisible(hasAdditional) end
 
-    -- Внутренний прямоугольный хомут (только при 2 стержнях по X или Y)
-    local hasInternalStirrup = (countX == 2 or countY == 2)
-    local pIntStyle = parameters:GetParameter("TransverseRebars", "InternalStirrupStyleId")
-    if pIntStyle then pIntStyle:SetVisible(hasInternalStirrup) end
-    local pIntMark = parameters:GetParameter("TransverseRebars", "InternalStirrupMark")
-    if pIntMark then pIntMark:SetVisible(hasInternalStirrup) end
+    local pXStyle = parameters:GetParameter("TransverseRebars", "AdditionalStirrupStyleIdX")
+    if pXStyle then pXStyle:SetVisible(countX > 0) end
+    local pXMark = parameters:GetParameter("TransverseRebars", "AdditionalStirrupMarkX")
+    if pXMark then pXMark:SetVisible(countX > 0) end
 
-    -- Выпуски продольной арматуры
-    local topOverhang = (values.LongitudinalRebars.TopOverhangEnabled == "yes")
+    local pYStyle = parameters:GetParameter("TransverseRebars", "AdditionalStirrupStyleIdY")
+    if pYStyle then pYStyle:SetVisible(countY > 0) end
+    local pYMark = parameters:GetParameter("TransverseRebars", "AdditionalStirrupMarkY")
+    if pYMark then pYMark:SetVisible(countY > 0) end
+
+    local topOverhang = values.LongitudinalRebars.TopOverhangEnabled == "yes"
     local pAnchorage = parameters:GetParameter("LongitudinalRebars", "AnchorageFactor")
     if pAnchorage then pAnchorage:SetVisible(topOverhang) end
     local pOverhangDisp = parameters:GetParameter("LongitudinalRebars", "UseOverhangDisplacement")
     if pOverhangDisp then pOverhangDisp:SetVisible(topOverhang) end
     local pDispFactor = parameters:GetParameter("LongitudinalRebars", "DisplacementFactor")
     if pDispFactor then
-        pDispFactor:SetVisible(topOverhang and (values.LongitudinalRebars.UseOverhangDisplacement == "yes"))
+        pDispFactor:SetVisible(topOverhang and values.LongitudinalRebars.UseOverhangDisplacement == "yes")
     end
     local pBend = parameters:GetParameter("LongitudinalRebars", "BendOverhang")
     if pBend then pBend:SetVisible(topOverhang) end
@@ -338,14 +335,15 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
 
     local outerStyleId = transParams.ClosedStirrupStyleId
 
-    local intStyleId = transParams.InternalStirrupStyleId
-    if not intStyleId or intStyleId == 0 then
-        intStyleId = outerStyleId
+    -- По X и Y используется отдельный стиль независимо от формы элемента:
+    -- 1 промежуточный стержень = S-шпилька; 2 = O-образный хомут.
+    local xStyleId = transParams.AdditionalStirrupStyleIdX
+    if not xStyleId or xStyleId == 0 then
+        xStyleId = outerStyleId
     end
-
-    local sStyleId = transParams.SStirrupStyleId
-    if not sStyleId or sStyleId == 0 then
-        sStyleId = intStyleId
+    local yStyleId = transParams.AdditionalStirrupStyleIdY
+    if not yStyleId or yStyleId == 0 then
+        yStyleId = outerStyleId
     end
 
     local cornerLongStyleId = longParams.CornerRebarStyleId
@@ -362,8 +360,8 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
     local bendAngleDeg = tonumber(transParams.BendAngle)
 
     local rOuter = getRebarRadius(outerStyleId)
-    local rInt = getRebarRadius(intStyleId)
-    local rS = getRebarRadius(sStyleId)
+    local rX = getRebarRadius(xStyleId)
+    local rY = getRebarRadius(yStyleId)
 
     -- 1. Наружный О-образный хомут
     local outerAnchor = Point3D(-cornerX, -cornerY, z)
@@ -381,10 +379,6 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
 
     container:AddRebar(outerStyleId, outerCurve)
 
-    -- Радиусы элементов на уровнях X и Y
-    local rX = (countX == 1) and rS or rInt
-    local rY = (countY == 1) and rS or rInt
-
     -- 2. Поперечный элемент X
     local zX = z + 3 * rOuter + rX
 
@@ -399,12 +393,12 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
             2 * y_c,
             math.pi,
             bendFactor,
-            intStyleId,
+            xStyleId,
             addLongStyleId,
             bendAngleDeg
         )
 
-        container:AddRebar(intStyleId, innerCurveX)
+        container:AddRebar(xStyleId, innerCurveX)
 
     elseif countX == 1 then
         -- S-шпилька между противоположными гранями Y
@@ -414,22 +408,22 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
             Point2D(0, -y_c),
             Point2D(0, y_c),
             bendFactor,
-            sStyleId,
+            xStyleId,
             addLongStyleId
         )
 
         sCurveX:Shift(0, 0, zX)
-        container:AddRebar(sStyleId, sCurveX)
+        container:AddRebar(xStyleId, sCurveX)
     end
 
     -- 3. Поперечный элемент Y: учитываем фактическую высоту элемента X
     local zY
     if countX == 2 then
         -- O-образный X занимает два диаметра по Z
-        zY = zX + 3 * rInt + rY
+        zY = zX + 3 * rX + rY
     elseif countX == 1 then
         -- S-образный X занимает один диаметр по Z
-        zY = zX + rS + rY
+        zY = zX + rX + rY
     else
         -- X отсутствует: Y прилегает непосредственно к наружному O-образному
         zY = z + 3 * rOuter + rY
@@ -446,12 +440,12 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
             2 * y_c,
             math.pi,
             bendFactor,
-            intStyleId,
+            yStyleId,
             addLongStyleId,
             bendAngleDeg
         )
 
-        container:AddRebar(intStyleId, innerCurveY)
+        container:AddRebar(yStyleId, innerCurveY)
 
     elseif countY == 1 then
         -- S-шпилька между противоположными гранями X
@@ -461,18 +455,163 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
             Point2D(x_c, 0),
             Point2D(-x_c, 0),
             bendFactor,
-            sStyleId,
+            yStyleId,
             addLongStyleId
         )
 
         sCurveY:Shift(0, 0, zY)
-        container:AddRebar(sStyleId, sCurveY)
+        container:AddRebar(yStyleId, sCurveY)
     end
 end
 
 -- 6. РАСКЛАДКА ПОПЕРЕЧНОГО АРМИРОВАНИЯ
 
+-- Высота яруса от оси наружного хомута до верхней грани
+-- последнего существующего поперечного элемента.
+function getStirrupTierHeight(styleParameters)
+    local transParams = styleParameters.TransverseRebars
+    local longParams = styleParameters.LongitudinalRebars
 
+    local outerStyleId = transParams.ClosedStirrupStyleId
+    local xStyleId = transParams.AdditionalStirrupStyleIdX
+    if not xStyleId or xStyleId == 0 then
+        xStyleId = outerStyleId
+    end
+    local yStyleId = transParams.AdditionalStirrupStyleIdY
+    if not yStyleId or yStyleId == 0 then
+        yStyleId = outerStyleId
+    end
+
+    local rOuter = getRebarRadius(outerStyleId)
+    local rX = getRebarRadius(xStyleId)
+    local rY = getRebarRadius(yStyleId)
+    local countX = tonumber(longParams.AdditionalRebarsCountX) or 0
+    local countY = tonumber(longParams.AdditionalRebarsCountY) or 0
+
+    -- Наружный O-образный хомут: от базовой оси до верхней поверхности.
+    local tierHeight = 2 * rOuter
+
+    local zX = 3 * rOuter + rX
+
+    if countX == 2 then
+        tierHeight = zX + 2 * rX
+    elseif countX == 1 then
+        tierHeight = zX + rX
+    end
+
+    if countY > 0 then
+        local zY
+        if countX == 2 then
+            zY = zX + 3 * rX + rY
+        elseif countX == 1 then
+            zY = zX + rX + rY
+        else
+            zY = 3 * rOuter + rY
+        end
+
+        if countY == 2 then
+            tierHeight = zY + 2 * rY
+        else
+            tierHeight = zY + rY
+        end
+    end
+
+    return tierHeight
+end
+
+-- Формирует список базовых отметок в пределах одного участка.
+-- Каждый участок начинает раскладку строго от своей нижней границы.
+-- При недостаточном зазоре приоритет имеет граничный ярус новой зоны.
+-- minAxisDistance = stepMinClearance + tierHeight + rOuter.
+function createTransverseTierLayout(positions, zoneBottom, zoneTop, step, useDobor, minAxisDistance)
+    if zoneTop < zoneBottom or step <= 0 then
+        return
+    end
+
+    local epsilon = 0.000001
+
+    -- Добавление граничного яруса: удаляем предыдущие близкие ярусы.
+    while #positions > 0 and zoneBottom - positions[#positions] < minAxisDistance - epsilon do
+        table.remove(positions)
+    end
+    table.insert(positions, zoneBottom)
+
+    -- Регулярные ярусы с шагом данного участка.
+    local count = math.floor((zoneTop - zoneBottom) / step)
+    for i = 1, count do
+        local z = zoneBottom + i * step
+        if z <= zoneTop + epsilon and z - positions[#positions] >= minAxisDistance - epsilon then
+            table.insert(positions, z)
+        end
+    end
+
+    if useDobor then
+        -- Добор всегда в конце последнего участка.
+        -- Удаляем только те регулярные ярусы, которые нарушают зазор.
+        while #positions > 0 and zoneTop - positions[#positions] < minAxisDistance - epsilon do
+            table.remove(positions)
+        end
+        table.insert(positions, zoneTop)
+    end
+end
+
+-- Выбор зон, расчёт отметок и построение готовых ярусов.
+function createTransverseStirrups(container, styleParameters, cornerX, cornerY, columnHeight, deltaR)
+    local general = styleParameters.General
+    local longParams = styleParameters.LongitudinalRebars
+    local transParams = styleParameters.TransverseRebars
+
+    local rOuter = getRebarRadius(transParams.ClosedStirrupStyleId)
+    local tierHeight = getStirrupTierHeight(styleParameters)
+    local stepMinClearance = MIN_REBAR_CLEARANCE
+    local minAxisDistance = stepMinClearance + tierHeight + rOuter
+
+    local zBottom = general.BottomCover + longParams.FreeEnd + rOuter
+    local topOffset = longParams.FreeEnd
+    if longParams.TopOverhangEnabled == "no" then
+        topOffset = topOffset + general.TopCover
+    end
+    local zTop = columnHeight - topOffset - tierHeight
+    if zTop < zBottom then
+        return
+    end
+
+    local zones = transParams.ReinforcementZones
+    local bottomSize = 0
+    local topSize = 0
+    if zones == "bottom" or zones == "both" then
+        bottomSize = styleParameters.BottomZone.ZoneSize
+    end
+    if zones == "top" or zones == "both" then
+        topSize = styleParameters.TopZone.ZoneSize
+    end
+    if bottomSize + topSize >= columnHeight then
+        zones = "none"
+    end
+
+    local positions = {}
+    local mainStep = transParams.MiddleZoneFirstStep
+    local borderBottom = math.max(zBottom, math.min(zTop, bottomSize))
+    local borderTop = math.max(zBottom, math.min(zTop, columnHeight - topSize))
+
+    if zones == "none" then
+        createTransverseTierLayout(positions, zBottom, zTop, mainStep, true, minAxisDistance)
+    elseif zones == "top" then
+        createTransverseTierLayout(positions, zBottom, borderTop, mainStep, false, minAxisDistance)
+        createTransverseTierLayout(positions, borderTop, zTop, styleParameters.TopZone.Step, true, minAxisDistance)
+    elseif zones == "bottom" then
+        createTransverseTierLayout(positions, zBottom, borderBottom, styleParameters.BottomZone.Step, false, minAxisDistance)
+        createTransverseTierLayout(positions, borderBottom, zTop, mainStep, true, minAxisDistance)
+    elseif zones == "both" then
+        createTransverseTierLayout(positions, zBottom, borderBottom, styleParameters.BottomZone.Step, false, minAxisDistance)
+        createTransverseTierLayout(positions, borderBottom, borderTop, mainStep, false, minAxisDistance)
+        createTransverseTierLayout(positions, borderTop, zTop, styleParameters.TopZone.Step, true, minAxisDistance)
+    end
+
+    for _, z in ipairs(positions) do
+        createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR, z)
+    end
+end
 
 
 -- 7. ОСНОВНАЯ ФУНКЦИЯ RENGA
@@ -541,15 +680,8 @@ function CreateObjectReinforcement(object, styleParameters)
     -- Построение продольного армирования
     createLongitudinalRebars(result, styleParameters, cornerX, cornerY, columnHeight, deltaR)
 
-        -- Один проверочный ярус поперечного армирования
-    local outerStirrupStyleId = styleParameters.TransverseRebars.ClosedStirrupStyleId
-    local rOuter = getRebarRadius(outerStirrupStyleId)
-
-    local z = styleParameters.General.BottomCover
-        + styleParameters.LongitudinalRebars.FreeEnd
-        + rOuter
-
-    createStirrupTier(result, styleParameters, cornerX, cornerY, deltaR, z)
+    -- Раскладка поперечного армирования по зонам
+    createTransverseStirrups(result, styleParameters, cornerX, cornerY, columnHeight, deltaR)
 
     return result
 end
