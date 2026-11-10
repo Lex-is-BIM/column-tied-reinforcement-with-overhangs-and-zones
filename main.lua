@@ -422,8 +422,18 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
         container:AddRebar(sStyleId, sCurveX)
     end
 
-    -- 3. Поперечный элемент Y
-    local zY = zX + 3 * rX + rY
+    -- 3. Поперечный элемент Y: учитываем фактическую высоту элемента X
+    local zY
+    if countX == 2 then
+        -- O-образный X занимает два диаметра по Z
+        zY = zX + 3 * rInt + rY
+    elseif countX == 1 then
+        -- S-образный X занимает один диаметр по Z
+        zY = zX + rS + rY
+    else
+        -- X отсутствует: Y прилегает непосредственно к наружному O-образному
+        zY = z + 3 * rOuter + rY
+    end
 
     if countY == 2 then
         -- Внутренний О-образный хомут
