@@ -1,5 +1,5 @@
 -- ============================================================
--- Column Tied Reinforcement With Overhangs, Zones And Intermediate Rebars
+-- Column Tied Reinforcement With Overhangs, Zones, Ties and Internal Stirrups
 -- ============================================================
 local MIN_REBAR_CLEARANCE = 25
 
@@ -11,12 +11,50 @@ function SetStyleParameterStates(parameters)
     local showTopZone = (zones == "top" or zones == "both") or (transZones == "top" or transZones == "both")
     local showBottomZone = (zones == "bottom" or zones == "both") or (transZones == "bottom" or transZones == "both")
 
-    parameters:GetParameterGroup("TopZone"):SetVisible(showTopZone)
-    parameters:GetParameterGroup("BottomZone"):SetVisible(showBottomZone)
+    local grpTop = parameters:GetParameterGroup("TopZone")
+    if grpTop then grpTop:SetVisible(showTopZone) end
+    local grpBottom = parameters:GetParameterGroup("BottomZone")
+    if grpBottom then grpBottom:SetVisible(showBottomZone) end
+
+    -- Промежуточные стержни
+    local countX = tonumber(values.LongitudinalRebars.AdditionalRebarsCountX) or 0
+    local countY = tonumber(values.LongitudinalRebars.AdditionalRebarsCountY) or 0
+    local hasAdditional = (countX > 0 or countY > 0)
+
+    local pAddStyle = parameters:GetParameter("LongitudinalRebars", "AdditionalRebarStyleId")
+    if pAddStyle then pAddStyle:SetVisible(hasAdditional) end
+    local pAddMark = parameters:GetParameter("LongitudinalRebars", "AdditionalRebarMark")
+    if pAddMark then pAddMark:SetVisible(hasAdditional) end
+
+    -- Внутренний прямоугольный хомут (только при 2 стержнях по X или Y)
+    local hasInternalStirrup = (countX == 2 or countY == 2)
+    local pIntStyle = parameters:GetParameter("TransverseRebars", "InternalStirrupStyleId")
+    if pIntStyle then pIntStyle:SetVisible(hasInternalStirrup) end
+    local pIntMark = parameters:GetParameter("TransverseRebars", "InternalStirrupMark")
+    if pIntMark then pIntMark:SetVisible(hasInternalStirrup) end
+
+    -- Выпуски продольной арматуры
+    local topOverhang = (values.LongitudinalRebars.TopOverhangEnabled == "yes")
+    local pAnchorage = parameters:GetParameter("LongitudinalRebars", "AnchorageFactor")
+    if pAnchorage then pAnchorage:SetVisible(topOverhang) end
+    local pOverhangDisp = parameters:GetParameter("LongitudinalRebars", "UseOverhangDisplacement")
+    if pOverhangDisp then pOverhangDisp:SetVisible(topOverhang) end
+    local pDispFactor = parameters:GetParameter("LongitudinalRebars", "DisplacementFactor")
+    if pDispFactor then
+        pDispFactor:SetVisible(topOverhang and (values.LongitudinalRebars.UseOverhangDisplacement == "yes"))
+    end
+    local pBend = parameters:GetParameter("LongitudinalRebars", "BendOverhang")
+    if pBend then pBend:SetVisible(topOverhang) end
 end
 
 function getRebarRadius(rebarStyleId)
+    if not rebarStyleId or rebarStyleId == 0 then
+        return 0
+    end
     local style = GetRebarStyle(rebarStyleId)
+    if not style then
+        return 0
+    end
     return GetParameterValue(style, "RebarDiameter") / 2
 end
 
@@ -67,7 +105,6 @@ function createClosedStirrupCurve(point3D, rebarsCenterWidth, rebarsCenterDepth,
     end
 
     local p_mid1 = p3:Clone():Rotate(axis1, -math.rad(bendAngleDeg / 2))
-
     local startHook = CreateCompositeCurve3D({CreateLineSegment3D(p1, p2), CreateArc3DByThreePoints(p2, p_mid1, p3)})
 
     -- 2. Обход рамки
@@ -111,7 +148,6 @@ function createClosedStirrupCurve(point3D, rebarsCenterWidth, rebarsCenterDepth,
     end
 
     local q_mid = endL:Clone():Rotate(axis1_top, math.rad(bendAngleDeg / 2))
-
     local endHook = CreateCompositeCurve3D({CreateArc3DByThreePoints(endL, q_mid, q2), CreateLineSegment3D(q2, q1)})
 
     -- 4. Сборка хомута
@@ -124,19 +160,9 @@ function createClosedStirrupCurve(point3D, rebarsCenterWidth, rebarsCenterDepth,
 end
 
 -- ============================================================
--- Раскладка хомутов
+-- Универсальная раскладка яруса поперечного армирования
 -- ============================================================
-function createRebarLayoutWithDobor(container, rebarStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-    bendAngleDeg, longStyleId, zoneBottom, zoneTop, step, useDobor)
-    local r = getRebarRadius(rebarStyleId)
-
-    local function addStirrupAt(z)
-        local anchor = Point3D(-rebarsCenterWidth / 2, -rebarsCenterDepth / 2, z)
-        local curve = createClosedStirrupCurve(anchor, rebarsCenterWidth, rebarsCenterDepth, 0, bendFactor,
-            rebarStyleId, longStyleId, bendAngleDeg)
-        container:AddRebar(rebarStyleId, curve)
-    end
-
+function createTransverseTierLayout(container, addTierFunc, zoneBottom, zoneTop, step, useDobor, stepMinClearance)
     if zoneTop <= zoneBottom then
         return
     end
@@ -145,7 +171,7 @@ function createRebarLayoutWithDobor(container, rebarStyleId, rebarsCenterWidth, 
     local layoutCount = math.floor(length / step)
     local remainder = length - step * layoutCount
 
-    if remainder < r * 2 then
+    if remainder < stepMinClearance then
         layoutCount = layoutCount - 1
     end
 
@@ -153,21 +179,29 @@ function createRebarLayoutWithDobor(container, rebarStyleId, rebarsCenterWidth, 
 
     if useDobor then
         local lastLayoutZ = zoneBottom + (regularCount - 1) * step
-        local minDistance = 3 * r + MIN_REBAR_CLEARANCE
+        local minDistance = stepMinClearance + MIN_REBAR_CLEARANCE
         if (zoneTop - lastLayoutZ) < minDistance then
             regularCount = regularCount - 1
         end
-        addStirrupAt(zoneTop)
+        addTierFunc(zoneTop)
     end
 
     for i = 1, regularCount do
-        addStirrupAt(zoneBottom + (i - 1) * step)
+        addTierFunc(zoneBottom + (i - 1) * step)
     end
 end
 
-function createTransverseStirrups(container, styleParameters, cornerX, cornerY, columnHeight)
+-- ============================================================
+-- Построение поперечного армирования (Расчёт по виткам и этажность)
+-- ============================================================
+function createTransverseStirrups(container, styleParameters, cornerX, cornerY, columnHeight, deltaR)
     local transParams = styleParameters.TransverseRebars
-    local stirrupStyleId = transParams.ClosedStirrupStyleId
+    local outerStirrupStyleId = transParams.ClosedStirrupStyleId
+    local intStirrupStyleId = transParams.InternalStirrupStyleId or outerStirrupStyleId
+    if not intStirrupStyleId or intStirrupStyleId == 0 then
+        intStirrupStyleId = outerStirrupStyleId
+    end
+
     local bendFactor = transParams.BendLengthFactor
     local mainStep = transParams.MiddleZoneFirstStep
     local bendAngleDeg = tonumber(transParams.BendAngle)
@@ -176,22 +210,79 @@ function createTransverseStirrups(container, styleParameters, cornerX, cornerY, 
     local zones = general.ReinforcementZones
 
     local longParams = styleParameters.LongitudinalRebars
-    local longStyleId = longParams.CornerRebarStyleId
+    local cornerLongStyleId = longParams.CornerRebarStyleId
+    local addLongStyleId = longParams.AdditionalRebarStyleId or cornerLongStyleId
+    if not addLongStyleId or addLongStyleId == 0 then
+        addLongStyleId = cornerLongStyleId
+    end
+
+    local countX = tonumber(longParams.AdditionalRebarsCountX) or 0
+    local countY = tonumber(longParams.AdditionalRebarsCountY) or 0
     local freeEnd = longParams.FreeEnd
 
     local rebarsCenterWidth = 2 * cornerX
     local rebarsCenterDepth = 2 * cornerY
 
-    local r = getRebarRadius(stirrupStyleId)
+    local rOuter = getRebarRadius(outerStirrupStyleId)
+    local rInt = getRebarRadius(intStirrupStyleId)
 
-    local Z_axis_bottom = general.BottomCover + freeEnd + r
+    -- Расчёт полной высоты яруса (от низа основного хомута до верха верхнего)
+    local fullTierH = 2 * rOuter -- высота основного
+    local currentZ = 3 * rOuter + rInt -- уровень X-хумута
+
+    if countX == 2 then
+        fullTierH = currentZ + 2 * rInt -- если есть X-хомут, добавляем его высоту
+    end
+
+    local zY = currentZ + 3 * rInt + rInt -- уровень Y-хумута
+    if countY == 2 then
+        fullTierH = zY + 2 * rInt -- если есть Y-хомут, это и есть верх яруса
+    end
+
+    local Z_axis_bottom = general.BottomCover + freeEnd + rOuter
 
     local totalTopOffset = freeEnd
     if longParams.TopOverhangEnabled == "no" then
         totalTopOffset = totalTopOffset + general.TopCover
     end
+    
+    -- Итоговая верхняя координата низа последнего яруса
+    local Z_axis_top = columnHeight - totalTopOffset - fullTierH
 
-    local Z_axis_top = columnHeight - totalTopOffset - (3 * r)
+    local function addTierAt(z)
+        -- 1. Основной наружный замкнутый хомут (низ яруса)
+        local z_main = z
+        local outerAnchor = Point3D(-rebarsCenterWidth / 2, -rebarsCenterDepth / 2, z_main)
+        local outerCurve = createClosedStirrupCurve(outerAnchor, rebarsCenterWidth, rebarsCenterDepth, 0,
+            bendFactor, outerStirrupStyleId, cornerLongStyleId, bendAngleDeg)
+        container:AddRebar(outerStirrupStyleId, outerCurve)
+
+        -- 2. Внутренний хомут по X
+        local zX = z_main + 3 * rOuter + rInt
+        if countX == 2 then
+            local x_c = cornerX / 3
+            local y_c = cornerY + deltaR
+            local innerW = 2 * x_c
+            local innerD = 2 * y_c
+            local anchorX2 = Point3D(x_c, y_c, zX)
+            local innerCurveX = createClosedStirrupCurve(anchorX2, innerW, innerD, math.pi, 
+                bendFactor, intStirrupStyleId, addLongStyleId, bendAngleDeg)
+            container:AddRebar(intStirrupStyleId, innerCurveX)
+        end
+
+        -- 3. Внутренний хомут по Y
+        local zY = zX + 3 * rInt + rInt
+        if countY == 2 then
+            local x_c = cornerX + deltaR
+            local y_c = cornerY / 3
+            local innerW = 2 * x_c
+            local innerD = 2 * y_c
+            local anchorY2 = Point3D(x_c, y_c, zY)
+            local innerCurveY = createClosedStirrupCurve(anchorY2, innerW, innerD, math.pi, 
+                bendFactor, intStirrupStyleId, addLongStyleId, bendAngleDeg)
+            container:AddRebar(intStirrupStyleId, innerCurveY)
+        end
+    end
 
     local isZonesValid = true
     local topZoneSize = 0
@@ -209,177 +300,120 @@ function createTransverseStirrups(container, styleParameters, cornerX, cornerY, 
         zones = "none"
     end
 
+    local stepMinClearance = fullTierH
+
     if zones == "none" then
-        createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            bendAngleDeg, longStyleId, Z_axis_bottom, Z_axis_top, mainStep, true)
+        createTransverseTierLayout(container, addTierAt, Z_axis_bottom, Z_axis_top, mainStep, true, stepMinClearance)
     elseif zones == "top" and isZonesValid then
         local topZoneStep = styleParameters.TopZone.Step
         local axisBorderTop = columnHeight - topZoneSize
 
-        createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            bendAngleDeg, longStyleId, Z_axis_bottom, axisBorderTop, mainStep, false)
-        createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            bendAngleDeg, longStyleId, axisBorderTop, Z_axis_top, topZoneStep, true)
+        createTransverseTierLayout(container, addTierAt, Z_axis_bottom, axisBorderTop, mainStep, false, stepMinClearance)
+        createTransverseTierLayout(container, addTierAt, axisBorderTop, Z_axis_top, topZoneStep, true, stepMinClearance)
     elseif zones == "bottom" and isZonesValid then
         local bottomZoneStep = styleParameters.BottomZone.Step
         local axisBorderBottom = bottomZoneSize
 
-        createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            bendAngleDeg, longStyleId, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false)
-        createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            bendAngleDeg, longStyleId, axisBorderBottom, Z_axis_top, mainStep, true)
+        createTransverseTierLayout(container, addTierAt, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false, stepMinClearance)
+        createTransverseTierLayout(container, addTierAt, axisBorderBottom, Z_axis_top, mainStep, true, stepMinClearance)
     elseif zones == "both" and isZonesValid then
         local bottomZoneStep = styleParameters.BottomZone.Step
         local topZoneStep = styleParameters.TopZone.Step
         local axisBorderBottom = bottomZoneSize
         local axisBorderTop = columnHeight - topZoneSize
 
-        createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            bendAngleDeg, longStyleId, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false)
-        createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            bendAngleDeg, longStyleId, axisBorderBottom, axisBorderTop, mainStep, false)
-        createRebarLayoutWithDobor(container, stirrupStyleId, rebarsCenterWidth, rebarsCenterDepth, bendFactor,
-            bendAngleDeg, longStyleId, axisBorderTop, Z_axis_top, topZoneStep, true)
+        createTransverseTierLayout(container, addTierAt, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false, stepMinClearance)
+        createTransverseTierLayout(container, addTierAt, axisBorderBottom, axisBorderTop, mainStep, false, stepMinClearance)
+        createTransverseTierLayout(container, addTierAt, axisBorderTop, Z_axis_top, topZoneStep, true, stepMinClearance)
     end
 end
+
 -- ============================================================
--- Создание продольных стержней с разбежкой и промежуточными рядами
+-- Создание продольных стержней с унифицированной разбежкой (строго 2 длины)
 -- ============================================================
-function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, columnHeight)
+function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, columnHeight, deltaR)
     local general = styleParameters.General
     local longParams = styleParameters.LongitudinalRebars
+
     local cornerStyleId = longParams.CornerRebarStyleId
-    local addStyleId = longParams.AdditionalRebarStyleId or cornerStyleId
+    local addStyleId = longParams.AdditionalRebarStyleId
+    if not addStyleId or addStyleId == 0 then
+        addStyleId = cornerStyleId
+    end
+
+    local cornerR = getRebarRadius(cornerStyleId)
+    local addR = getRebarRadius(addStyleId)
+
+    local maxD = math.max(2 * cornerR, 2 * addR)
+    local lAnch = maxD * longParams.AnchorageFactor
+    local dispFactor = longParams.DisplacementFactor or 1.3
+    local lDisp = lAnch * dispFactor
+
     local bendOverhang = longParams.BendOverhang or "none"
     local useDisplacement = (longParams.UseOverhangDisplacement == "yes")
     local topOverhangEnabled = (longParams.TopOverhangEnabled == "yes")
-    local maxStep = longParams.Step or 200
-    local dispFactor = longParams.DisplacementFactor or 1.3
-    -- Сбор массива стержней по контуру по часовой стрелке
+
+    local countX = tonumber(longParams.AdditionalRebarsCountX) or 0
+    local countY = tonumber(longParams.AdditionalRebarsCountY) or 0
+
     local rebarPositions = {}
-    -- 1. Угол 1: Низ-лево
-    table.insert(rebarPositions, {
-        x = -cornerX,
-        y = -cornerY,
-        dirX = 1,
-        dirY = 1,
-        styleId = cornerStyleId
-    })
-    -- 2. Грань X (снизу): от -cornerX до cornerX при y = -cornerY
-    local spanX = 2 * cornerX
-    local countX = math.floor(spanX / maxStep)
-    if (spanX % maxStep) == 0 and countX > 0 then
-        countX = countX - 1
-    end
+
+    table.insert(rebarPositions, {x = -cornerX, y = -cornerY, dirX = 1, dirY = 1, styleId = cornerStyleId})
     if countX > 0 then
-        local stepX = spanX / (countX + 1)
+        local stepX = (2 * cornerX) / (countX + 1)
         for i = 1, countX do
-            table.insert(rebarPositions, {
-                x = -cornerX + i * stepX,
-                y = -cornerY,
-                dirX = 0,
-                dirY = 1,
-                styleId = addStyleId
-            })
+            table.insert(rebarPositions, {x = -cornerX + i * stepX, y = -cornerY - deltaR, dirX = 0, dirY = 1, styleId = addStyleId})
         end
     end
-    -- 3. Угол 2: Низ-право
-    table.insert(rebarPositions, {
-        x = cornerX,
-        y = -cornerY,
-        dirX = -1,
-        dirY = 1,
-        styleId = cornerStyleId
-    })
-    -- 4. Грань Y (справа): от -cornerY до cornerY при x = cornerX
-    local spanY = 2 * cornerY
-    local countY = math.floor(spanY / maxStep)
-    if (spanY % maxStep) == 0 and countY > 0 then
-        countY = countY - 1
-    end
+    table.insert(rebarPositions, {x = cornerX, y = -cornerY, dirX = -1, dirY = 1, styleId = cornerStyleId})
     if countY > 0 then
-        local stepY = spanY / (countY + 1)
+        local stepY = (2 * cornerY) / (countY + 1)
         for i = 1, countY do
-            table.insert(rebarPositions, {
-                x = cornerX,
-                y = -cornerY + i * stepY,
-                dirX = -1,
-                dirY = 0,
-                styleId = addStyleId
-            })
+            table.insert(rebarPositions, {x = cornerX + deltaR, y = -cornerY + i * stepY, dirX = -1, dirY = 0, styleId = addStyleId})
         end
     end
-    -- 5. Угол 3: Верх-право
-    table.insert(rebarPositions, {
-        x = cornerX,
-        y = cornerY,
-        dirX = -1,
-        dirY = -1,
-        styleId = cornerStyleId
-    })
-    -- 6. Грань X (сверху): от cornerX до -cornerX при y = cornerY
+    table.insert(rebarPositions, {x = cornerX, y = cornerY, dirX = -1, dirY = -1, styleId = cornerStyleId})
     if countX > 0 then
-        local stepX = spanX / (countX + 1)
+        local stepX = (2 * cornerX) / (countX + 1)
         for i = 1, countX do
-            table.insert(rebarPositions, {
-                x = cornerX - i * stepX,
-                y = cornerY,
-                dirX = 0,
-                dirY = -1,
-                styleId = addStyleId
-            })
+            table.insert(rebarPositions, {x = cornerX - i * stepX, y = cornerY + deltaR, dirX = 0, dirY = -1, styleId = addStyleId})
         end
     end
-    -- 7. Угол 4: Верх-лево
-    table.insert(rebarPositions, {
-        x = -cornerX,
-        y = cornerY,
-        dirX = 1,
-        dirY = -1,
-        styleId = cornerStyleId
-    })
-    -- 8. Грань Y (слева): от cornerY до -cornerY при x = -cornerX
+    table.insert(rebarPositions, {x = -cornerX, y = cornerY, dirX = 1, dirY = -1, styleId = cornerStyleId})
     if countY > 0 then
-        local stepY = spanY / (countY + 1)
+        local stepY = (2 * cornerY) / (countY + 1)
         for i = 1, countY do
-            table.insert(rebarPositions, {
-                x = -cornerX,
-                y = cornerY - i * stepY,
-                dirX = 1,
-                dirY = 0,
-                styleId = addStyleId
-            })
+            table.insert(rebarPositions, {x = -cornerX - deltaR, y = cornerY - i * stepY, dirX = 1, dirY = 0, styleId = addStyleId})
         end
     end
-    -- Построение каждого стержня
+
+    local zBottom = general.BottomCover
+
     for idx, pos in ipairs(rebarPositions) do
         local rStyleId = pos.styleId
         local longR = getRebarRadius(rStyleId)
         local d = 2 * longR
-        local lAnch = d * longParams.AnchorageFactor
+
         local isShifted = (idx % 2 == 0)
-        -- Нижняя отметка
-        local zBottom = general.BottomCover
-        if topOverhangEnabled and useDisplacement and isShifted then
-            zBottom = general.BottomCover + lAnch * dispFactor
-        end
-        -- Верхняя отметка
+
         local zTop
         if topOverhangEnabled then
-            if isShifted then
-                zTop = columnHeight + lAnch * (1.0 + dispFactor)
+            if useDisplacement and isShifted then
+                zTop = columnHeight + lAnch + lDisp
             else
                 zTop = columnHeight + lAnch
             end
         else
             zTop = columnHeight - general.TopCover
         end
+
         if zTop > zBottom then
             local hCrank = 6 * d
             local rBending = 2.5 * d
             local dx = pos.dirX * d
             local dy = pos.dirY * d
             local curve = nil
+
             if bendOverhang == "top" and topOverhangEnabled and (columnHeight - hCrank) > zBottom then
                 local p1 = Point3D(pos.x, pos.y, zBottom)
                 local p2 = Point3D(pos.x, pos.y, columnHeight - hCrank)
@@ -399,30 +433,79 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
             else
                 curve = CreateLineSegment3D(Point3D(pos.x, pos.y, zBottom), Point3D(pos.x, pos.y, zTop))
             end
+
             container:AddRebar(rStyleId, curve)
         end
     end
 end
+
 -- ============================================================
 -- Точка входа CreateObjectReinforcement
 -- ============================================================
 function CreateObjectReinforcement(object, styleParameters)
     local result = ReinforcementContainer()
-    local profile = GetSectionProfile(object)
-    if GetTypeName(profile) ~= "RectangularProfile" then
+
+    local width = nil
+    local depth = nil
+
+    if type(GetSectionProfile) == "function" then
+        local ok, profile = pcall(GetSectionProfile, object)
+        if ok and profile and profile.Width and profile.Height then
+            width = profile.Width
+            depth = profile.Height
+        end
+    end
+
+    if not width or not depth then
+        local bbox = GetBoundingBox(object)
+        if bbox then
+            width = bbox:GetWidth()
+            depth = bbox:GetDepth()
+        end
+    end
+
+    if not width or not depth or width <= 0 or depth <= 0 then
         return result
     end
-    local halfWidth = profile.Width / 2
-    local halfDepth = profile.Height / 2
+
     local general = styleParameters.General
     local axisDistance = general.AxisDistanceSide
-    local cornerX = halfWidth - axisDistance
-    local cornerY = halfDepth - axisDistance
+    local cornerX = (width / 2) - axisDistance
+    local cornerY = (depth / 2) - axisDistance
+
     if cornerX <= 0 or cornerY <= 0 then
         return result
     end
-    local columnHeight = GetParameterValue(object, "ColumnHeight")
-    createLongitudinalRebars(result, styleParameters, cornerX, cornerY, columnHeight)
-    createTransverseStirrups(result, styleParameters, cornerX, cornerY, columnHeight)
+
+    local columnHeight = nil
+    local okH, h = pcall(GetParameterValue, object, "ColumnHeight")
+    if okH and type(h) == "number" and h > 0 then
+        columnHeight = h
+    else
+        local bbox = GetBoundingBox(object)
+        if bbox then
+            columnHeight = bbox:GetHeight()
+        end
+    end
+
+    if not columnHeight or columnHeight <= 0 then
+        return result
+    end
+
+    -- Разность радиусов углового и дополнительного стержней для смещения к хомуту
+    local cornerStyleId = styleParameters.LongitudinalRebars.CornerRebarStyleId
+    local addStyleId = styleParameters.LongitudinalRebars.AdditionalRebarStyleId or cornerStyleId
+    if not addStyleId or addStyleId == 0 then
+        addStyleId = cornerStyleId
+    end
+
+    local cornerR = getRebarRadius(cornerStyleId)
+    local addR = getRebarRadius(addStyleId)
+    local deltaR = cornerR - addR
+
+    -- Построение каркаса
+    createLongitudinalRebars(result, styleParameters, cornerX, cornerY, columnHeight, deltaR)
+    createTransverseStirrups(result, styleParameters, cornerX, cornerY, columnHeight, deltaR)
+
     return result
 end

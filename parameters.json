@@ -1,8 +1,8 @@
 {
   "metadata": {
     "defaultName": "Армирование колонны с выпусками и зонами усиления",
-    "description": "Шаблон стиля армирования колонны с вязаным каркасом, замкнутыми хомутами, настраиваемыми зонами усиления, промежуточными стержнями и выпусками вразбежку.",
-    "version": "1.1.0",
+    "description": "Стиль армирования прямоугольной колонны: угловые и промежуточные стержни (0, 1, 2 по X и Y), замкнутый наружный хомут, внутренние хомуты, S-шпильки, зоны усиления и выпуски вразбежку.",
+    "version": "1.3.0",
     "author": "Renga Software"
   },
   "styleParameters": [
@@ -28,7 +28,7 @@
         },
         {
           "name": "AxisDistanceSide",
-          "text": "Расстояние от боковой грани до оси продольной арматуры",
+          "text": "Расстояние от грани до оси продольной арматуры",
           "type": "Length",
           "default": 50,
           "min": 25,
@@ -61,12 +61,26 @@
       "text": "Продольная арматура каркаса",
       "params": [
         {
-          "name": "Step",
-          "text": "Шаг",
-          "type": "Length",
-          "default": 200,
-          "min": 50,
-          "max": 1000
+          "name": "AdditionalRebarsCountX",
+          "text": "Промежуточных стержней по X (на грань)",
+          "type": "UserEnum",
+          "items": [
+            { "key": 0, "text": "0" },
+            { "key": 1, "text": "1" },
+            { "key": 2, "text": "2" }
+          ],
+          "default": 0
+        },
+        {
+          "name": "AdditionalRebarsCountY",
+          "text": "Промежуточных стержней по Y (на грань)",
+          "type": "UserEnum",
+          "items": [
+            { "key": 0, "text": "0" },
+            { "key": 1, "text": "1" },
+            { "key": 2, "text": "2" }
+          ],
+          "default": 0
         },
         {
           "name": "CornerRebarStyleId",
@@ -155,19 +169,43 @@
       "params": [
         {
           "name": "ClosedStirrupStyleId",
-          "text": "Замкнутый хомут",
+          "text": "Основной замкнутый хомут",
           "type": "Id",
           "entityTypeId": "608edb78-96f3-40a6-a0ec-71000105581b"
         },
         {
           "name": "ClosedStirrupMark",
-          "text": "Марка замкнутого хомута",
+          "text": "Марка основного хомута",
           "type": "String",
           "default": "Х1"
         },
         {
+          "name": "InternalStirrupStyleId",
+          "text": "Внутренний хомут (при 2 стержнях)",
+          "type": "Id",
+          "entityTypeId": "608edb78-96f3-40a6-a0ec-71000105581b"
+        },
+        {
+          "name": "InternalStirrupMark",
+          "text": "Марка внутреннего хомута",
+          "type": "String",
+          "default": "Х2"
+        },
+        {
+          "name": "SStirrupStyleId",
+          "text": "Шпилька / S-хомут (при 1 стержне)",
+          "type": "Id",
+          "entityTypeId": "608edb78-96f3-40a6-a0ec-71000105581b"
+        },
+        {
+          "name": "SStirrupMark",
+          "text": "Марка шпильки (S-хомута)",
+          "type": "String",
+          "default": "Ш1"
+        },
+        {
           "name": "BendAngle",
-          "text": "Угол отгиба",
+          "text": "Угол отгиба крюков хомутов",
           "type": "UserEnum",
           "items": [
             { "key": "180", "text": "180°" },
@@ -177,7 +215,7 @@
         },
         {
           "name": "BendLengthFactor",
-          "text": "Длина отгиба, d",
+          "text": "Длина отгиба крюков, d",
           "type": "Real",
           "default": 10,
           "min": 5,
