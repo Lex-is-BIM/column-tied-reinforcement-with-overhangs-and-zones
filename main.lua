@@ -276,22 +276,81 @@ end
 
 -- S-образная шпилька
 
+function S_ClampCurve(startPoint2D, endPoint2D, bendLengthD, rebarStyleId, longRebarStyleId)
+
+    local longR = getRebarRadius(longRebarStyleId)
+    local r = getRebarRadius(rebarStyleId)
+
+    local dx = endPoint2D:GetX() - startPoint2D:GetX()
+    local dy = endPoint2D:GetY() - startPoint2D:GetY()
+    local length = math.sqrt(dx ^ 2 + dy ^ 2)
+
+    local rBending = (longR < 2.5 * r) and (3.5 * r) or (longR + r)
+    local lBend = bendLengthD * r * 2
+    local shiftXCenterLine = 2.5 * r - longR
+    local length2 = length - shiftXCenterLine * 2
+
+    local tangentAngle = math.acos(rBending / (length2 * 0.5))
+    local shiftX = math.cos(tangentAngle) * rBending
+    local shiftY = math.sin(tangentAngle) * rBending
+    local shiftBendX = math.sin(tangentAngle) * lBend
+    local shiftBendY = math.cos(tangentAngle) * lBend
+
+    local startPoint = Point3D(startPoint2D:GetX(), startPoint2D:GetY(), 0)
+
+    local points = {
+        startPoint:Clone():Shift(shiftXCenterLine - shiftX + shiftBendX, shiftY + shiftBendY, 0),
+        startPoint:Clone():Shift(shiftXCenterLine - shiftX - shiftY, shiftY - shiftX, 0),
+        startPoint:Clone():Shift(shiftXCenterLine + shiftX - shiftY, -shiftY - shiftX, 0),
+        startPoint:Clone():Shift(length - shiftXCenterLine - shiftX + shiftY, shiftY + shiftX, 0),
+        startPoint:Clone():Shift(length - shiftXCenterLine + shiftX + shiftY, -shiftY + shiftX, 0),
+        startPoint:Clone():Shift(length - shiftXCenterLine + shiftX - shiftBendX, -shiftY - shiftBendY, 0)
+    }
+
+    local rebarCurve = CreatePolyline3D(points)
+    FilletCorners3D(rebarCurve, rBending)
+
+    -- Алгоритм MathLib.DirectionAngle
+    local angle
+
+    if dx == 0 then
+        angle = dy >= 0 and math.pi / 2 or 3 * math.pi / 2
+    else
+        local arrayAngle = math.atan(math.abs(dy) / math.abs(dx))
+
+        if dx > 0 then
+            angle = dy >= 0 and arrayAngle or 2 * math.pi - arrayAngle
+        else
+            angle = dy >= 0 and math.pi - arrayAngle or math.pi + arrayAngle
+        end
+    end
+
+    return rebarCurve:Rotate(Axis3D(startPoint, Vector3D(0, 0, 1)), angle)
+
+end
+
+
 -- 5. КОМПОНОВКА ЯРУСА
 
 function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR, z)
     local transParams = styleParameters.TransverseRebars
     local longParams = styleParameters.LongitudinalRebars
 
-    local outerStirrupStyleId = transParams.ClosedStirrupStyleId
-    local intStirrupStyleId = transParams.InternalStirrupStyleId
+    local outerStyleId = transParams.ClosedStirrupStyleId
 
-    if not intStirrupStyleId or intStirrupStyleId == 0 then
-        intStirrupStyleId = outerStirrupStyleId
+    local intStyleId = transParams.InternalStirrupStyleId
+    if not intStyleId or intStyleId == 0 then
+        intStyleId = outerStyleId
+    end
+
+    local sStyleId = transParams.SStirrupStyleId
+    if not sStyleId or sStyleId == 0 then
+        sStyleId = intStyleId
     end
 
     local cornerLongStyleId = longParams.CornerRebarStyleId
-    local addLongStyleId = longParams.AdditionalRebarStyleId
 
+    local addLongStyleId = longParams.AdditionalRebarStyleId
     if not addLongStyleId or addLongStyleId == 0 then
         addLongStyleId = cornerLongStyleId
     end
@@ -302,72 +361,102 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
     local bendFactor = transParams.BendLengthFactor
     local bendAngleDeg = tonumber(transParams.BendAngle)
 
-    local rOuter = getRebarRadius(outerStirrupStyleId)
-    local rInt = getRebarRadius(intStirrupStyleId)
+    local rOuter = getRebarRadius(outerStyleId)
+    local rInt = getRebarRadius(intStyleId)
+    local rS = getRebarRadius(sStyleId)
 
-    local rebarsCenterWidth = 2 * cornerX
-    local rebarsCenterDepth = 2 * cornerY
-
-    -- Основной наружный О-образный хомут
+    -- 1. Наружный О-образный хомут
     local outerAnchor = Point3D(-cornerX, -cornerY, z)
 
     local outerCurve = createClosedStirrupCurve(
         outerAnchor,
-        rebarsCenterWidth,
-        rebarsCenterDepth,
+        2 * cornerX,
+        2 * cornerY,
         0,
         bendFactor,
-        outerStirrupStyleId,
+        outerStyleId,
         cornerLongStyleId,
         bendAngleDeg
     )
 
-    container:AddRebar(outerStirrupStyleId, outerCurve)
+    container:AddRebar(outerStyleId, outerCurve)
 
-    -- Внутренний О-образный хомут по X
-    local zX = z + 3 * rOuter + rInt
+    -- Радиусы элементов на уровнях X и Y
+    local rX = (countX == 1) and rS or rInt
+    local rY = (countY == 1) and rS or rInt
+
+    -- 2. Поперечный элемент X
+    local zX = z + 3 * rOuter + rX
 
     if countX == 2 then
+        -- Внутренний О-образный хомут
         local x_c = cornerX / 3
         local y_c = cornerY + deltaR
 
-        local anchorX = Point3D(x_c, y_c, zX)
-
         local innerCurveX = createClosedStirrupCurve(
-            anchorX,
+            Point3D(x_c, y_c, zX),
             2 * x_c,
             2 * y_c,
             math.pi,
             bendFactor,
-            intStirrupStyleId,
+            intStyleId,
             addLongStyleId,
             bendAngleDeg
         )
 
-        container:AddRebar(intStirrupStyleId, innerCurveX)
+        container:AddRebar(intStyleId, innerCurveX)
+
+    elseif countX == 1 then
+        -- S-шпилька между противоположными гранями Y
+        local y_c = cornerY + deltaR
+
+        local sCurveX = S_ClampCurve(
+            Point2D(0, -y_c),
+            Point2D(0, y_c),
+            bendFactor,
+            sStyleId,
+            addLongStyleId
+        )
+
+        sCurveX:Shift(0, 0, zX)
+        container:AddRebar(sStyleId, sCurveX)
     end
 
-    -- Внутренний О-образный хомут по Y
-    local zY = zX + 4 * rInt
+    -- 3. Поперечный элемент Y
+    local zY = zX + 3 * rX + rY
 
     if countY == 2 then
+        -- Внутренний О-образный хомут
         local x_c = cornerX + deltaR
         local y_c = cornerY / 3
 
-        local anchorY = Point3D(x_c, y_c, zY)
-
         local innerCurveY = createClosedStirrupCurve(
-            anchorY,
+            Point3D(x_c, y_c, zY),
             2 * x_c,
             2 * y_c,
             math.pi,
             bendFactor,
-            intStirrupStyleId,
+            intStyleId,
             addLongStyleId,
             bendAngleDeg
         )
 
-        container:AddRebar(intStirrupStyleId, innerCurveY)
+        container:AddRebar(intStyleId, innerCurveY)
+
+    elseif countY == 1 then
+        -- S-шпилька между противоположными гранями X
+        local x_c = cornerX + deltaR
+
+        local sCurveY = S_ClampCurve(
+            Point2D(x_c, 0),
+            Point2D(-x_c, 0),
+            bendFactor,
+            sStyleId,
+            addLongStyleId
+        )
+
+        sCurveY:Shift(0, 0, zY)
+        container:AddRebar(sStyleId, sCurveY)
     end
 end
 
