@@ -3,6 +3,8 @@
 -- ============================================================
 local MIN_REBAR_CLEARANCE = 25
 
+-- 1. УПРАВЛЕНИЕ ПАРАМЕТРАМИ
+
 function SetStyleParameterStates(parameters)
     local values = parameters:GetParameterValues()
     local zones = values.General.ReinforcementZones
@@ -47,6 +49,8 @@ function SetStyleParameterStates(parameters)
     if pBend then pBend:SetVisible(topOverhang) end
 end
 
+-- 2. ОБЩИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+
 function getRebarRadius(rebarStyleId)
     if not rebarStyleId or rebarStyleId == 0 then
         return 0
@@ -58,279 +62,8 @@ function getRebarRadius(rebarStyleId)
     return GetParameterValue(style, "RebarDiameter") / 2
 end
 
--- ============================================================
--- Полный O-образный замкнутый хомут с начальным и конечным крюками
--- ============================================================
-function createClosedStirrupCurve(point3D, rebarsCenterWidth, rebarsCenterDepth, angle, bendLengthD, rebarStyleId,
-    longRebarStyleId, bendAngleDeg)
-    local longR = getRebarRadius(longRebarStyleId)
-    local r = getRebarRadius(rebarStyleId)
+-- 3. ПРОДОЛЬНОЕ АРМИРОВАНИЕ
 
-    local rBending = math.max(3.5 * r, longR + r)
-    local lBend = bendLengthD * r * 2
-
-    local shiftRadial = rBending - (longR + r)
-    local shiftXY = shiftRadial * math.cos(math.pi / 4)
-
-    local x0 = point3D:GetX()
-    local y0 = point3D:GetY()
-    local z0 = point3D:GetZ()
-
-    local W = rebarsCenterWidth
-    local D = rebarsCenterDepth
-
-    local c1 = Point3D(x0 + shiftXY, y0 + shiftXY, z0)
-    local c2 = Point3D(x0 + W - shiftXY, y0 + shiftXY, z0)
-    local c3 = Point3D(x0 + W - shiftXY, y0 + D - shiftXY, z0 + 2 * r)
-    local c4 = Point3D(x0 + shiftXY, y0 + D - shiftXY, z0 + 2 * r)
-
-    local rotateAxis = Axis3D(point3D, Vector3D(0, 0, 1))
-
-    -- 1. Начальный крюк
-    local axis1 = Axis3D(c1, Vector3D(0, 0, 1))
-    local p3 = c1:Clone():Shift(0, -rBending, 0)
-    local p2 = c1:Clone():Shift(-rBending, 0, 0)
-    local p1 = p2:Clone():Shift(0, lBend, 0)
-
-    if bendAngleDeg == 135 then
-        p2:Rotate(axis1, -math.pi / 4)
-        p1:Rotate(axis1, -math.pi / 4)
-    elseif bendAngleDeg == 180 then
-        p2:Rotate(axis1, -math.pi / 2)
-        p1:Rotate(axis1, -math.pi / 2)
-    else
-        local rotRad = -math.rad(bendAngleDeg - 90)
-        p2:Rotate(axis1, rotRad)
-        p1:Rotate(axis1, rotRad)
-    end
-
-    local p_mid1 = p3:Clone():Rotate(axis1, -math.rad(bendAngleDeg / 2))
-    local startHook = CreateCompositeCurve3D({CreateLineSegment3D(p1, p2), CreateArc3DByThreePoints(p2, p_mid1, p3)})
-
-    -- 2. Обход рамки
-    local arc2_start = c2:Clone():Shift(0, -rBending, 0)
-    local arc2_end = c2:Clone():Shift(rBending, 0, 0)
-    local axis2 = Axis3D(c2, Vector3D(0, 0, 1))
-    local arc2_mid = arc2_start:Clone():Rotate(axis2, math.pi / 4)
-    local arc2 = CreateArc3DByThreePoints(arc2_start, arc2_mid, arc2_end)
-
-    local arc3_start = c3:Clone():Shift(rBending, 0, 0)
-    local arc3_end = c3:Clone():Shift(0, rBending, 0)
-    local axis3 = Axis3D(c3, Vector3D(0, 0, 1))
-    local arc3_mid = arc3_start:Clone():Rotate(axis3, math.pi / 4)
-    local arc3 = CreateArc3DByThreePoints(arc3_start, arc3_mid, arc3_end)
-
-    local arc4_start = c4:Clone():Shift(0, rBending, 0)
-    local arc4_end = c4:Clone():Shift(-rBending, 0, 0)
-    local axis4 = Axis3D(c4, Vector3D(0, 0, 1))
-    local arc4_mid = arc4_start:Clone():Rotate(axis4, math.pi / 4)
-    local arc4 = CreateArc3DByThreePoints(arc4_start, arc4_mid, arc4_end)
-
-    local endL = Point3D(c1:GetX() - rBending, c1:GetY(), z0 + 2 * r)
-
-    -- 3. Замыкающий крюк
-    local c1_top = Point3D(c1:GetX(), c1:GetY(), z0 + 2 * r)
-    local axis1_top = Axis3D(c1_top, Vector3D(0, 0, 1))
-
-    local q2 = c1_top:Clone():Shift(0, -rBending, 0)
-    local q1 = q2:Clone():Shift(lBend, 0, 0)
-
-    if bendAngleDeg == 135 then
-        q2:Rotate(axis1_top, math.pi / 4)
-        q1:Rotate(axis1_top, math.pi / 4)
-    elseif bendAngleDeg == 180 then
-        q2:Rotate(axis1_top, math.pi / 2)
-        q1:Rotate(axis1_top, math.pi / 2)
-    else
-        local rotRad = math.rad(bendAngleDeg - 90)
-        q2:Rotate(axis1_top, rotRad)
-        q1:Rotate(axis1_top, rotRad)
-    end
-
-    local q_mid = endL:Clone():Rotate(axis1_top, math.rad(bendAngleDeg / 2))
-    local endHook = CreateCompositeCurve3D({CreateArc3DByThreePoints(endL, q_mid, q2), CreateLineSegment3D(q2, q1)})
-
-    -- 4. Сборка хомута
-    local stirrupCurve = CreateCompositeCurve3D({startHook, CreateLineSegment3D(p3, arc2_start), arc2,
-                                                 CreateLineSegment3D(arc2_end, arc3_start), arc3,
-                                                 CreateLineSegment3D(arc3_end, arc4_start), arc4,
-                                                 CreateLineSegment3D(arc4_end, endL), endHook})
-
-    return stirrupCurve:Rotate(rotateAxis, angle)
-end
-
--- ============================================================
--- Универсальная раскладка яруса поперечного армирования
--- ============================================================
-function createTransverseTierLayout(container, addTierFunc, zoneBottom, zoneTop, step, useDobor, stepMinClearance)
-    if zoneTop <= zoneBottom then
-        return
-    end
-
-    local length = zoneTop - zoneBottom
-    local layoutCount = math.floor(length / step)
-    local remainder = length - step * layoutCount
-
-    if remainder < stepMinClearance then
-        layoutCount = layoutCount - 1
-    end
-
-    local regularCount = layoutCount + 1
-
-    if useDobor then
-        local lastLayoutZ = zoneBottom + (regularCount - 1) * step
-        local minDistance = stepMinClearance + MIN_REBAR_CLEARANCE
-        if (zoneTop - lastLayoutZ) < minDistance then
-            regularCount = regularCount - 1
-        end
-        addTierFunc(zoneTop)
-    end
-
-    for i = 1, regularCount do
-        addTierFunc(zoneBottom + (i - 1) * step)
-    end
-end
-
--- ============================================================
--- Построение поперечного армирования (Расчёт по виткам и этажность)
--- ============================================================
-function createTransverseStirrups(container, styleParameters, cornerX, cornerY, columnHeight, deltaR)
-    local transParams = styleParameters.TransverseRebars
-    local outerStirrupStyleId = transParams.ClosedStirrupStyleId
-    local intStirrupStyleId = transParams.InternalStirrupStyleId or outerStirrupStyleId
-    if not intStirrupStyleId or intStirrupStyleId == 0 then
-        intStirrupStyleId = outerStirrupStyleId
-    end
-
-    local bendFactor = transParams.BendLengthFactor
-    local mainStep = transParams.MiddleZoneFirstStep
-    local bendAngleDeg = tonumber(transParams.BendAngle)
-
-    local general = styleParameters.General
-    local zones = general.ReinforcementZones
-
-    local longParams = styleParameters.LongitudinalRebars
-    local cornerLongStyleId = longParams.CornerRebarStyleId
-    local addLongStyleId = longParams.AdditionalRebarStyleId or cornerLongStyleId
-    if not addLongStyleId or addLongStyleId == 0 then
-        addLongStyleId = cornerLongStyleId
-    end
-
-    local countX = tonumber(longParams.AdditionalRebarsCountX) or 0
-    local countY = tonumber(longParams.AdditionalRebarsCountY) or 0
-    local freeEnd = longParams.FreeEnd
-
-    local rebarsCenterWidth = 2 * cornerX
-    local rebarsCenterDepth = 2 * cornerY
-
-    local rOuter = getRebarRadius(outerStirrupStyleId)
-    local rInt = getRebarRadius(intStirrupStyleId)
-
-    -- Расчёт полной высоты яруса (от низа основного хомута до верха верхнего)
-    local fullTierH = 2 * rOuter -- высота основного
-    local currentZ = 3 * rOuter + rInt -- уровень X-хумута
-
-    if countX == 2 then
-        fullTierH = currentZ + 2 * rInt -- если есть X-хомут, добавляем его высоту
-    end
-
-    local zY = currentZ + 3 * rInt + rInt -- уровень Y-хумута
-    if countY == 2 then
-        fullTierH = zY + 2 * rInt -- если есть Y-хомут, это и есть верх яруса
-    end
-
-    local Z_axis_bottom = general.BottomCover + freeEnd + rOuter
-
-    local totalTopOffset = freeEnd
-    if longParams.TopOverhangEnabled == "no" then
-        totalTopOffset = totalTopOffset + general.TopCover
-    end
-    
-    -- Итоговая верхняя координата низа последнего яруса
-    local Z_axis_top = columnHeight - totalTopOffset - fullTierH
-
-    local function addTierAt(z)
-        -- 1. Основной наружный замкнутый хомут (низ яруса)
-        local z_main = z
-        local outerAnchor = Point3D(-rebarsCenterWidth / 2, -rebarsCenterDepth / 2, z_main)
-        local outerCurve = createClosedStirrupCurve(outerAnchor, rebarsCenterWidth, rebarsCenterDepth, 0,
-            bendFactor, outerStirrupStyleId, cornerLongStyleId, bendAngleDeg)
-        container:AddRebar(outerStirrupStyleId, outerCurve)
-
-        -- 2. Внутренний хомут по X
-        local zX = z_main + 3 * rOuter + rInt
-        if countX == 2 then
-            local x_c = cornerX / 3
-            local y_c = cornerY + deltaR
-            local innerW = 2 * x_c
-            local innerD = 2 * y_c
-            local anchorX2 = Point3D(x_c, y_c, zX)
-            local innerCurveX = createClosedStirrupCurve(anchorX2, innerW, innerD, math.pi, 
-                bendFactor, intStirrupStyleId, addLongStyleId, bendAngleDeg)
-            container:AddRebar(intStirrupStyleId, innerCurveX)
-        end
-
-        -- 3. Внутренний хомут по Y
-        local zY = zX + 3 * rInt + rInt
-        if countY == 2 then
-            local x_c = cornerX + deltaR
-            local y_c = cornerY / 3
-            local innerW = 2 * x_c
-            local innerD = 2 * y_c
-            local anchorY2 = Point3D(x_c, y_c, zY)
-            local innerCurveY = createClosedStirrupCurve(anchorY2, innerW, innerD, math.pi, 
-                bendFactor, intStirrupStyleId, addLongStyleId, bendAngleDeg)
-            container:AddRebar(intStirrupStyleId, innerCurveY)
-        end
-    end
-
-    local isZonesValid = true
-    local topZoneSize = 0
-    local bottomZoneSize = 0
-
-    if zones == "top" or zones == "both" then
-        topZoneSize = styleParameters.TopZone.ZoneSize
-    end
-    if zones == "bottom" or zones == "both" then
-        bottomZoneSize = styleParameters.BottomZone.ZoneSize
-    end
-
-    if (bottomZoneSize + topZoneSize) >= columnHeight then
-        isZonesValid = false
-        zones = "none"
-    end
-
-    local stepMinClearance = fullTierH
-
-    if zones == "none" then
-        createTransverseTierLayout(container, addTierAt, Z_axis_bottom, Z_axis_top, mainStep, true, stepMinClearance)
-    elseif zones == "top" and isZonesValid then
-        local topZoneStep = styleParameters.TopZone.Step
-        local axisBorderTop = columnHeight - topZoneSize
-
-        createTransverseTierLayout(container, addTierAt, Z_axis_bottom, axisBorderTop, mainStep, false, stepMinClearance)
-        createTransverseTierLayout(container, addTierAt, axisBorderTop, Z_axis_top, topZoneStep, true, stepMinClearance)
-    elseif zones == "bottom" and isZonesValid then
-        local bottomZoneStep = styleParameters.BottomZone.Step
-        local axisBorderBottom = bottomZoneSize
-
-        createTransverseTierLayout(container, addTierAt, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false, stepMinClearance)
-        createTransverseTierLayout(container, addTierAt, axisBorderBottom, Z_axis_top, mainStep, true, stepMinClearance)
-    elseif zones == "both" and isZonesValid then
-        local bottomZoneStep = styleParameters.BottomZone.Step
-        local topZoneStep = styleParameters.TopZone.Step
-        local axisBorderBottom = bottomZoneSize
-        local axisBorderTop = columnHeight - topZoneSize
-
-        createTransverseTierLayout(container, addTierAt, Z_axis_bottom, axisBorderBottom, bottomZoneStep, false, stepMinClearance)
-        createTransverseTierLayout(container, addTierAt, axisBorderBottom, axisBorderTop, mainStep, false, stepMinClearance)
-        createTransverseTierLayout(container, addTierAt, axisBorderTop, Z_axis_top, topZoneStep, true, stepMinClearance)
-    end
-end
-
--- ============================================================
--- Создание продольных стержней с унифицированной разбежкой (строго 2 длины)
--- ============================================================
 function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, columnHeight, deltaR)
     local general = styleParameters.General
     local longParams = styleParameters.LongitudinalRebars
@@ -439,9 +172,212 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
     end
 end
 
--- ============================================================
--- Точка входа CreateObjectReinforcement
--- ============================================================
+-- 4. ГЕОМЕТРИЯ ПОПЕРЕЧНОГО АРМИРОВАНИЯ
+
+-- О-образный хомут
+
+function createClosedStirrupCurve(point3D, rebarsCenterWidth, rebarsCenterDepth, angle, bendLengthD, rebarStyleId,
+    longRebarStyleId, bendAngleDeg)
+    local longR = getRebarRadius(longRebarStyleId)
+    local r = getRebarRadius(rebarStyleId)
+
+    local rBending = math.max(3.5 * r, longR + r)
+    local lBend = bendLengthD * r * 2
+
+    local shiftRadial = rBending - (longR + r)
+    local shiftXY = shiftRadial * math.cos(math.pi / 4)
+
+    local x0 = point3D:GetX()
+    local y0 = point3D:GetY()
+    local z0 = point3D:GetZ()
+
+    local W = rebarsCenterWidth
+    local D = rebarsCenterDepth
+
+    local c1 = Point3D(x0 + shiftXY, y0 + shiftXY, z0)
+    local c2 = Point3D(x0 + W - shiftXY, y0 + shiftXY, z0)
+    local c3 = Point3D(x0 + W - shiftXY, y0 + D - shiftXY, z0 + 2 * r)
+    local c4 = Point3D(x0 + shiftXY, y0 + D - shiftXY, z0 + 2 * r)
+
+    local rotateAxis = Axis3D(point3D, Vector3D(0, 0, 1))
+
+    -- 1. Начальный крюк
+    local axis1 = Axis3D(c1, Vector3D(0, 0, 1))
+    local p3 = c1:Clone():Shift(0, -rBending, 0)
+    local p2 = c1:Clone():Shift(-rBending, 0, 0)
+    local p1 = p2:Clone():Shift(0, lBend, 0)
+
+    if bendAngleDeg == 135 then
+        p2:Rotate(axis1, -math.pi / 4)
+        p1:Rotate(axis1, -math.pi / 4)
+    elseif bendAngleDeg == 180 then
+        p2:Rotate(axis1, -math.pi / 2)
+        p1:Rotate(axis1, -math.pi / 2)
+    else
+        local rotRad = -math.rad(bendAngleDeg - 90)
+        p2:Rotate(axis1, rotRad)
+        p1:Rotate(axis1, rotRad)
+    end
+
+    local p_mid1 = p3:Clone():Rotate(axis1, -math.rad(bendAngleDeg / 2))
+    local startHook = CreateCompositeCurve3D({CreateLineSegment3D(p1, p2), CreateArc3DByThreePoints(p2, p_mid1, p3)})
+
+    -- 2. Обход рамки
+    local arc2_start = c2:Clone():Shift(0, -rBending, 0)
+    local arc2_end = c2:Clone():Shift(rBending, 0, 0)
+    local axis2 = Axis3D(c2, Vector3D(0, 0, 1))
+    local arc2_mid = arc2_start:Clone():Rotate(axis2, math.pi / 4)
+    local arc2 = CreateArc3DByThreePoints(arc2_start, arc2_mid, arc2_end)
+
+    local arc3_start = c3:Clone():Shift(rBending, 0, 0)
+    local arc3_end = c3:Clone():Shift(0, rBending, 0)
+    local axis3 = Axis3D(c3, Vector3D(0, 0, 1))
+    local arc3_mid = arc3_start:Clone():Rotate(axis3, math.pi / 4)
+    local arc3 = CreateArc3DByThreePoints(arc3_start, arc3_mid, arc3_end)
+
+    local arc4_start = c4:Clone():Shift(0, rBending, 0)
+    local arc4_end = c4:Clone():Shift(-rBending, 0, 0)
+    local axis4 = Axis3D(c4, Vector3D(0, 0, 1))
+    local arc4_mid = arc4_start:Clone():Rotate(axis4, math.pi / 4)
+    local arc4 = CreateArc3DByThreePoints(arc4_start, arc4_mid, arc4_end)
+
+    local endL = Point3D(c1:GetX() - rBending, c1:GetY(), z0 + 2 * r)
+
+    -- 3. Замыкающий крюк
+    local c1_top = Point3D(c1:GetX(), c1:GetY(), z0 + 2 * r)
+    local axis1_top = Axis3D(c1_top, Vector3D(0, 0, 1))
+
+    local q2 = c1_top:Clone():Shift(0, -rBending, 0)
+    local q1 = q2:Clone():Shift(lBend, 0, 0)
+
+    if bendAngleDeg == 135 then
+        q2:Rotate(axis1_top, math.pi / 4)
+        q1:Rotate(axis1_top, math.pi / 4)
+    elseif bendAngleDeg == 180 then
+        q2:Rotate(axis1_top, math.pi / 2)
+        q1:Rotate(axis1_top, math.pi / 2)
+    else
+        local rotRad = math.rad(bendAngleDeg - 90)
+        q2:Rotate(axis1_top, rotRad)
+        q1:Rotate(axis1_top, rotRad)
+    end
+
+    local q_mid = endL:Clone():Rotate(axis1_top, math.rad(bendAngleDeg / 2))
+    local endHook = CreateCompositeCurve3D({CreateArc3DByThreePoints(endL, q_mid, q2), CreateLineSegment3D(q2, q1)})
+
+    -- 4. Сборка хомута
+    local stirrupCurve = CreateCompositeCurve3D({startHook, CreateLineSegment3D(p3, arc2_start), arc2,
+                                                 CreateLineSegment3D(arc2_end, arc3_start), arc3,
+                                                 CreateLineSegment3D(arc3_end, arc4_start), arc4,
+                                                 CreateLineSegment3D(arc4_end, endL), endHook})
+
+    return stirrupCurve:Rotate(rotateAxis, angle)
+end
+
+-- S-образная шпилька
+
+-- 5. КОМПОНОВКА ЯРУСА
+
+function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR, z)
+    local transParams = styleParameters.TransverseRebars
+    local longParams = styleParameters.LongitudinalRebars
+
+    local outerStirrupStyleId = transParams.ClosedStirrupStyleId
+    local intStirrupStyleId = transParams.InternalStirrupStyleId
+
+    if not intStirrupStyleId or intStirrupStyleId == 0 then
+        intStirrupStyleId = outerStirrupStyleId
+    end
+
+    local cornerLongStyleId = longParams.CornerRebarStyleId
+    local addLongStyleId = longParams.AdditionalRebarStyleId
+
+    if not addLongStyleId or addLongStyleId == 0 then
+        addLongStyleId = cornerLongStyleId
+    end
+
+    local countX = tonumber(longParams.AdditionalRebarsCountX) or 0
+    local countY = tonumber(longParams.AdditionalRebarsCountY) or 0
+
+    local bendFactor = transParams.BendLengthFactor
+    local bendAngleDeg = tonumber(transParams.BendAngle)
+
+    local rOuter = getRebarRadius(outerStirrupStyleId)
+    local rInt = getRebarRadius(intStirrupStyleId)
+
+    local rebarsCenterWidth = 2 * cornerX
+    local rebarsCenterDepth = 2 * cornerY
+
+    -- Основной наружный О-образный хомут
+    local outerAnchor = Point3D(-cornerX, -cornerY, z)
+
+    local outerCurve = createClosedStirrupCurve(
+        outerAnchor,
+        rebarsCenterWidth,
+        rebarsCenterDepth,
+        0,
+        bendFactor,
+        outerStirrupStyleId,
+        cornerLongStyleId,
+        bendAngleDeg
+    )
+
+    container:AddRebar(outerStirrupStyleId, outerCurve)
+
+    -- Внутренний О-образный хомут по X
+    local zX = z + 3 * rOuter + rInt
+
+    if countX == 2 then
+        local x_c = cornerX / 3
+        local y_c = cornerY + deltaR
+
+        local anchorX = Point3D(x_c, y_c, zX)
+
+        local innerCurveX = createClosedStirrupCurve(
+            anchorX,
+            2 * x_c,
+            2 * y_c,
+            math.pi,
+            bendFactor,
+            intStirrupStyleId,
+            addLongStyleId,
+            bendAngleDeg
+        )
+
+        container:AddRebar(intStirrupStyleId, innerCurveX)
+    end
+
+    -- Внутренний О-образный хомут по Y
+    local zY = zX + 4 * rInt
+
+    if countY == 2 then
+        local x_c = cornerX + deltaR
+        local y_c = cornerY / 3
+
+        local anchorY = Point3D(x_c, y_c, zY)
+
+        local innerCurveY = createClosedStirrupCurve(
+            anchorY,
+            2 * x_c,
+            2 * y_c,
+            math.pi,
+            bendFactor,
+            intStirrupStyleId,
+            addLongStyleId,
+            bendAngleDeg
+        )
+
+        container:AddRebar(intStirrupStyleId, innerCurveY)
+    end
+end
+
+-- 6. РАСКЛАДКА ПОПЕРЕЧНОГО АРМИРОВАНИЯ
+
+
+
+
+-- 7. ОСНОВНАЯ ФУНКЦИЯ RENGA
+
 function CreateObjectReinforcement(object, styleParameters)
     local result = ReinforcementContainer()
 
@@ -503,9 +439,18 @@ function CreateObjectReinforcement(object, styleParameters)
     local addR = getRebarRadius(addStyleId)
     local deltaR = cornerR - addR
 
-    -- Построение каркаса
+    -- Построение продольного армирования
     createLongitudinalRebars(result, styleParameters, cornerX, cornerY, columnHeight, deltaR)
-    createTransverseStirrups(result, styleParameters, cornerX, cornerY, columnHeight, deltaR)
+
+        -- Один проверочный ярус поперечного армирования
+    local outerStirrupStyleId = styleParameters.TransverseRebars.ClosedStirrupStyleId
+    local rOuter = getRebarRadius(outerStirrupStyleId)
+
+    local z = styleParameters.General.BottomCover
+        + styleParameters.LongitudinalRebars.FreeEnd
+        + rOuter
+
+    createStirrupTier(result, styleParameters, cornerX, cornerY, deltaR, z)
 
     return result
 end
