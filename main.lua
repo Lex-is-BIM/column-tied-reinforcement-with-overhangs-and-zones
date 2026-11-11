@@ -67,6 +67,8 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
     local longParams = styleParameters.LongitudinalRebars
 
     local cornerStyleId = longParams.CornerRebarStyleId
+    local cornerMark = longParams.CornerRebarMark
+    local addMark = longParams.AdditionalRebarMark
     local addStyleId = longParams.AdditionalRebarStyleId
     if not addStyleId or addStyleId == 0 then
         addStyleId = cornerStyleId
@@ -91,32 +93,32 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
 
     local rebarPositions = {}
 
-    table.insert(rebarPositions, {x = -cornerX, y = -cornerY, dirX = 1, dirY = 1, styleId = cornerStyleId})
+    table.insert(rebarPositions, {x = -cornerX, y = -cornerY, dirX = 1, dirY = 1, styleId = cornerStyleId, mark = cornerMark})
     if countX > 0 then
         local stepX = (2 * cornerX) / (countX + 1)
         for i = 1, countX do
-            table.insert(rebarPositions, {x = -cornerX + i * stepX, y = -cornerY - deltaR, dirX = 0, dirY = 1, styleId = addStyleId})
+            table.insert(rebarPositions, {x = -cornerX + i * stepX, y = -cornerY - deltaR, dirX = 0, dirY = 1, styleId = addStyleId, mark = addMark})
         end
     end
-    table.insert(rebarPositions, {x = cornerX, y = -cornerY, dirX = -1, dirY = 1, styleId = cornerStyleId})
+    table.insert(rebarPositions, {x = cornerX, y = -cornerY, dirX = -1, dirY = 1, styleId = cornerStyleId, mark = cornerMark})
     if countY > 0 then
         local stepY = (2 * cornerY) / (countY + 1)
         for i = 1, countY do
-            table.insert(rebarPositions, {x = cornerX + deltaR, y = -cornerY + i * stepY, dirX = -1, dirY = 0, styleId = addStyleId})
+            table.insert(rebarPositions, {x = cornerX + deltaR, y = -cornerY + i * stepY, dirX = -1, dirY = 0, styleId = addStyleId, mark = addMark})
         end
     end
-    table.insert(rebarPositions, {x = cornerX, y = cornerY, dirX = -1, dirY = -1, styleId = cornerStyleId})
+    table.insert(rebarPositions, {x = cornerX, y = cornerY, dirX = -1, dirY = -1, styleId = cornerStyleId, mark = cornerMark})
     if countX > 0 then
         local stepX = (2 * cornerX) / (countX + 1)
         for i = 1, countX do
-            table.insert(rebarPositions, {x = cornerX - i * stepX, y = cornerY + deltaR, dirX = 0, dirY = -1, styleId = addStyleId})
+            table.insert(rebarPositions, {x = cornerX - i * stepX, y = cornerY + deltaR, dirX = 0, dirY = -1, styleId = addStyleId, mark = addMark})
         end
     end
-    table.insert(rebarPositions, {x = -cornerX, y = cornerY, dirX = 1, dirY = -1, styleId = cornerStyleId})
+    table.insert(rebarPositions, {x = -cornerX, y = cornerY, dirX = 1, dirY = -1, styleId = cornerStyleId, mark = cornerMark})
     if countY > 0 then
         local stepY = (2 * cornerY) / (countY + 1)
         for i = 1, countY do
-            table.insert(rebarPositions, {x = -cornerX - deltaR, y = cornerY - i * stepY, dirX = 1, dirY = 0, styleId = addStyleId})
+            table.insert(rebarPositions, {x = -cornerX - deltaR, y = cornerY - i * stepY, dirX = 1, dirY = 0, styleId = addStyleId, mark = addMark})
         end
     end
 
@@ -169,7 +171,7 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
                 curve = CreateLineSegment3D(Point3D(pos.x, pos.y, zBottom), Point3D(pos.x, pos.y, zTop))
             end
 
-            container:AddRebar(rStyleId, curve)
+            container:AddRebar(rStyleId, curve, ReinforcementRole.Structural, pos.mark)
         end
     end
 end
@@ -334,11 +336,24 @@ end
 
 -- 5. КОМПОНОВКА ЯРУСА
 
-function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR, z)
+-- Один элемент поперечного яруса: одиночный хомут либо его шаговая раскладка.
+function addTierRebar(container, rebarStyleId, curve, mark, step, count)
+    if count and count > 1 then
+        container:AddRebarSet(rebarStyleId, curve, Vector3D(0, 0, 1), step, count,
+            ReinforcementRole.Auxiliary, mark)
+    else
+        container:AddRebar(rebarStyleId, curve, ReinforcementRole.Auxiliary, mark)
+    end
+end
+
+function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR, z, step, count)
     local transParams = styleParameters.TransverseRebars
     local longParams = styleParameters.LongitudinalRebars
 
     local outerStyleId = transParams.ClosedStirrupStyleId
+    local outerMark = transParams.ClosedStirrupMark
+    local xMark = transParams.AdditionalStirrupMarkX
+    local yMark = transParams.AdditionalStirrupMarkY
 
     -- По X и Y используется отдельный стиль независимо от формы элемента:
     -- 1 промежуточный стержень = S-шпилька; 2 = O-образный хомут.
@@ -382,7 +397,7 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
         bendAngleDeg
     )
 
-    container:AddRebar(outerStyleId, outerCurve)
+    addTierRebar(container, outerStyleId, outerCurve, outerMark, step, count)
 
     -- 2. Поперечный элемент X
     local zX = z + 3 * rOuter + rX
@@ -403,7 +418,7 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
             bendAngleDeg
         )
 
-        container:AddRebar(xStyleId, innerCurveX)
+        addTierRebar(container, xStyleId, innerCurveX, xMark, step, count)
 
     elseif countX == 1 then
         -- S-шпилька между противоположными гранями Y
@@ -418,7 +433,7 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
         )
 
         sCurveX:Shift(0, 0, zX)
-        container:AddRebar(xStyleId, sCurveX)
+        addTierRebar(container, xStyleId, sCurveX, xMark, step, count)
     end
 
     -- 3. Поперечный элемент Y: учитываем фактическую высоту элемента X
@@ -450,7 +465,7 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
             bendAngleDeg
         )
 
-        container:AddRebar(yStyleId, innerCurveY)
+        addTierRebar(container, yStyleId, innerCurveY, yMark, step, count)
 
     elseif countY == 1 then
         -- S-шпилька между противоположными гранями X
@@ -465,7 +480,7 @@ function createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
         )
 
         sCurveY:Shift(0, 0, zY)
-        container:AddRebar(yStyleId, sCurveY)
+        addTierRebar(container, yStyleId, sCurveY, yMark, step, count)
     end
 end
 
@@ -613,8 +628,34 @@ function createTransverseStirrups(container, styleParameters, cornerX, cornerY, 
         createTransverseTierLayout(positions, borderTop, zTop, styleParameters.TopZone.Step, true, minAxisDistance)
     end
 
-    for _, z in ipairs(positions) do
-        createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR, z)
+    -- Последняя отметка — доборный ярус; не включаем его в регулярные наборы.
+    local regularEnd = #positions - 1
+    local i = 1
+    local epsilon = 0.000001
+
+    while i <= regularEnd do
+        local count = 1
+        local step = nil
+
+        if i < regularEnd then
+            step = positions[i + 1] - positions[i]
+            count = 2
+
+            -- Объединяем только последовательные ярусы с одинаковым шагом.
+            while i + count <= regularEnd and
+                math.abs((positions[i + count] - positions[i + count - 1]) - step) < epsilon do
+                count = count + 1
+            end
+        end
+
+        createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
+            positions[i], step, count)
+        i = i + count
+    end
+
+    if #positions > 0 then
+        createStirrupTier(container, styleParameters, cornerX, cornerY, deltaR,
+            positions[#positions])
     end
 end
 
