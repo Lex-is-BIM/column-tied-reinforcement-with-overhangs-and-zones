@@ -2,7 +2,7 @@
   "metadata": {
     "defaultName": "Армирование колонны с выпусками и зонами усиления",
     "description": "Стиль армирования прямоугольной колонны: угловые и промежуточные стержни (0, 1, 2 по X и Y), замкнутый наружный хомут, внутренние хомуты, S-шпильки, зоны усиления и выпуски вразбежку.",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "author": "Renga Software"
   },
   "styleParameters": [
@@ -33,14 +33,6 @@
           "default": 50,
           "min": 25,
           "max": 100
-        },
-        {
-          "name": "MinRebarLength",
-          "text": "Минимальная длина стержня",
-          "type": "Length",
-          "default": 100,
-          "min": 10,
-          "max": 1000
         }
       ]
     },
@@ -122,7 +114,7 @@
         },
         {
           "name": "TopOverhangEnabled",
-          "text": "Выпуск арматуры вверх",
+          "text": "Выпуски продольной арматуры",
           "type": "UserEnum",
           "items": [
             {
@@ -138,31 +130,39 @@
         },
         {
           "name": "AnchorageFactor",
-          "text": "Коэффициент анкеровки, d",
+          "text": "Длина выпуска, d",
           "type": "Real",
           "default": 40,
           "min": 20,
           "max": 80
         },
         {
-          "name": "UseOverhangDisplacement",
-          "text": "Смещение выпусков на величину разбежки",
+          "name": "RebarEndStagger",
+          "text": "Разбежка концов стержней",
           "type": "UserEnum",
           "items": [
             {
-              "key": "yes",
-              "text": "Да"
+              "key": "none",
+              "text": "Нет"
             },
             {
-              "key": "no",
-              "text": "Нет"
+              "key": "top",
+              "text": "Вверху"
+            },
+            {
+              "key": "bottom",
+              "text": "Внизу"
+            },
+            {
+              "key": "both",
+              "text": "Вверху и внизу"
             }
           ],
-          "default": "yes"
+          "default": "top"
         },
         {
           "name": "DisplacementFactor",
-          "text": "Коэффициент величины разбежки, l_anch",
+          "text": "Коэффициент разбежки, от длины выпуска",
           "type": "Real",
           "default": 1.3,
           "min": 0.5,

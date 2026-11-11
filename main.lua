@@ -36,11 +36,12 @@ function SetStyleParameterStates(parameters)
     local topOverhang = values.LongitudinalRebars.TopOverhangEnabled == "yes"
     local pAnchorage = parameters:GetParameter("LongitudinalRebars", "AnchorageFactor")
     if pAnchorage then pAnchorage:SetVisible(topOverhang) end
-    local pOverhangDisp = parameters:GetParameter("LongitudinalRebars", "UseOverhangDisplacement")
-    if pOverhangDisp then pOverhangDisp:SetVisible(topOverhang) end
+    local pStagger = parameters:GetParameter("LongitudinalRebars", "RebarEndStagger")
+    if pStagger then pStagger:SetVisible(topOverhang) end
     local pDispFactor = parameters:GetParameter("LongitudinalRebars", "DisplacementFactor")
     if pDispFactor then
-        pDispFactor:SetVisible(topOverhang and values.LongitudinalRebars.UseOverhangDisplacement == "yes")
+        local staggerMode = values.LongitudinalRebars.RebarEndStagger or "none"
+        pDispFactor:SetVisible(topOverhang and staggerMode ~= "none")
     end
     local pBend = parameters:GetParameter("LongitudinalRebars", "BendOverhang")
     if pBend then pBend:SetVisible(topOverhang) end
@@ -80,8 +81,10 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
     local lDisp = lAnch * dispFactor
 
     local bendOverhang = longParams.BendOverhang or "none"
-    local useDisplacement = (longParams.UseOverhangDisplacement == "yes")
     local topOverhangEnabled = (longParams.TopOverhangEnabled == "yes")
+    local staggerMode = topOverhangEnabled and (longParams.RebarEndStagger or "none") or "none"
+    local staggerTop = (staggerMode == "top" or staggerMode == "both")
+    local staggerBottom = (staggerMode == "bottom" or staggerMode == "both")
 
     local countX = tonumber(longParams.AdditionalRebarsCountX) or 0
     local countY = tonumber(longParams.AdditionalRebarsCountY) or 0
@@ -117,8 +120,6 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
         end
     end
 
-    local zBottom = general.BottomCover
-
     for idx, pos in ipairs(rebarPositions) do
         local rStyleId = pos.styleId
         local longR = getRebarRadius(rStyleId)
@@ -126,12 +127,16 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
 
         local isShifted = (idx % 2 == 0)
 
+        local zBottom = general.BottomCover
+        if isShifted and staggerBottom then
+            zBottom = zBottom + lDisp
+        end
+
         local zTop
         if topOverhangEnabled then
-            if useDisplacement and isShifted then
-                zTop = columnHeight + lAnch + lDisp
-            else
-                zTop = columnHeight + lAnch
+            zTop = columnHeight + lAnch
+            if isShifted and staggerTop then
+                zTop = zTop + lDisp
             end
         else
             zTop = columnHeight - general.TopCover
