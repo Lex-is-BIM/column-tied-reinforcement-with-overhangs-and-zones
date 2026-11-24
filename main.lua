@@ -45,6 +45,12 @@ function SetStyleParameterStates(parameters)
     end
     local pBend = parameters:GetParameter("LongitudinalRebars", "BendOverhang")
     if pBend then pBend:SetVisible(topOverhang) end
+
+    local cornerHasBoth, additionalHasBoth = getStaggeredRebarMarkUsage(values.LongitudinalRebars)
+    local pCornerStaggerMark = parameters:GetParameter("LongitudinalRebars", "CornerRebarStaggeredMark")
+    if pCornerStaggerMark then pCornerStaggerMark:SetVisible(cornerHasBoth) end
+    local pAddStaggerMark = parameters:GetParameter("LongitudinalRebars", "AdditionalRebarStaggeredMark")
+    if pAddStaggerMark then pAddStaggerMark:SetVisible(additionalHasBoth) end
 end
 
 -- 2. ОБЩИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -60,6 +66,44 @@ function getRebarRadius(rebarStyleId)
     return GetParameterValue(style, "RebarDiameter") / 2
 end
 
+-- Возвращает, нужны ли отдельные марки для чередуемых стержней.
+-- Учитывает форму изделия и наличие обеих групп внутри каждого типа.
+function getStaggeredRebarMarkUsage(longParams)
+    if longParams.TopOverhangEnabled ~= "yes" then
+        return false, false
+    end
+
+    local mode = longParams.RebarEndStagger or "none"
+    local bend = longParams.BendOverhang or "none"
+
+    -- При разбежке с обоих концов без верхнего отгиба
+    -- изделия одинаковы по форме и длине (различается только отметка).
+    if mode == "none" or (mode == "both" and bend ~= "top") then
+        return false, false
+    end
+
+    local countX = tonumber(longParams.AdditionalRebarsCountX) or 0
+    local countY = tonumber(longParams.AdditionalRebarsCountY) or 0
+
+    -- Индексы четырёх угловых стержней при существующем обходе периметра.
+    local cornerIndices = {1, 2 + countX, 3 + countX + countY, 4 + 2 * countX + countY}
+    local shiftedCorners = 0
+    for _, index in ipairs(cornerIndices) do
+        if index % 2 == 0 then
+            shiftedCorners = shiftedCorners + 1
+        end
+    end
+
+    -- Каждая вторая позиция смещается. Всего позиций всегда чётное число.
+    local totalShifted = (4 + 2 * (countX + countY)) / 2
+    local shiftedAdditional = totalShifted - shiftedCorners
+    local totalAdditional = 2 * (countX + countY)
+
+    local cornerHasBoth = shiftedCorners > 0 and shiftedCorners < 4
+    local additionalHasBoth = shiftedAdditional > 0 and shiftedAdditional < totalAdditional
+    return cornerHasBoth, additionalHasBoth
+end
+
 -- 3. ПРОДОЛЬНОЕ АРМИРОВАНИЕ
 
 function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, columnHeight, deltaR)
@@ -69,6 +113,9 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
     local cornerStyleId = longParams.CornerRebarStyleId
     local cornerMark = longParams.CornerRebarMark
     local addMark = longParams.AdditionalRebarMark
+    local cornerHasBoth, additionalHasBoth = getStaggeredRebarMarkUsage(longParams)
+    local cornerStaggerMark = cornerHasBoth and (longParams.CornerRebarStaggeredMark or cornerMark) or cornerMark
+    local addStaggerMark = additionalHasBoth and (longParams.AdditionalRebarStaggeredMark or addMark) or addMark
     local addStyleId = longParams.AdditionalRebarStyleId
     if not addStyleId or addStyleId == 0 then
         addStyleId = cornerStyleId
@@ -93,32 +140,32 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
 
     local rebarPositions = {}
 
-    table.insert(rebarPositions, {x = -cornerX, y = -cornerY, dirX = 1, dirY = 1, styleId = cornerStyleId, mark = cornerMark})
+    table.insert(rebarPositions, {x = -cornerX, y = -cornerY, dirX = 1, dirY = 1, styleId = cornerStyleId, mark = cornerMark, staggeredMark = cornerStaggerMark})
     if countX > 0 then
         local stepX = (2 * cornerX) / (countX + 1)
         for i = 1, countX do
-            table.insert(rebarPositions, {x = -cornerX + i * stepX, y = -cornerY - deltaR, dirX = 0, dirY = 1, styleId = addStyleId, mark = addMark})
+            table.insert(rebarPositions, {x = -cornerX + i * stepX, y = -cornerY - deltaR, dirX = 0, dirY = 1, styleId = addStyleId, mark = addMark, staggeredMark = addStaggerMark})
         end
     end
-    table.insert(rebarPositions, {x = cornerX, y = -cornerY, dirX = -1, dirY = 1, styleId = cornerStyleId, mark = cornerMark})
+    table.insert(rebarPositions, {x = cornerX, y = -cornerY, dirX = -1, dirY = 1, styleId = cornerStyleId, mark = cornerMark, staggeredMark = cornerStaggerMark})
     if countY > 0 then
         local stepY = (2 * cornerY) / (countY + 1)
         for i = 1, countY do
-            table.insert(rebarPositions, {x = cornerX + deltaR, y = -cornerY + i * stepY, dirX = -1, dirY = 0, styleId = addStyleId, mark = addMark})
+            table.insert(rebarPositions, {x = cornerX + deltaR, y = -cornerY + i * stepY, dirX = -1, dirY = 0, styleId = addStyleId, mark = addMark, staggeredMark = addStaggerMark})
         end
     end
-    table.insert(rebarPositions, {x = cornerX, y = cornerY, dirX = -1, dirY = -1, styleId = cornerStyleId, mark = cornerMark})
+    table.insert(rebarPositions, {x = cornerX, y = cornerY, dirX = -1, dirY = -1, styleId = cornerStyleId, mark = cornerMark, staggeredMark = cornerStaggerMark})
     if countX > 0 then
         local stepX = (2 * cornerX) / (countX + 1)
         for i = 1, countX do
-            table.insert(rebarPositions, {x = cornerX - i * stepX, y = cornerY + deltaR, dirX = 0, dirY = -1, styleId = addStyleId, mark = addMark})
+            table.insert(rebarPositions, {x = cornerX - i * stepX, y = cornerY + deltaR, dirX = 0, dirY = -1, styleId = addStyleId, mark = addMark, staggeredMark = addStaggerMark})
         end
     end
-    table.insert(rebarPositions, {x = -cornerX, y = cornerY, dirX = 1, dirY = -1, styleId = cornerStyleId, mark = cornerMark})
+    table.insert(rebarPositions, {x = -cornerX, y = cornerY, dirX = 1, dirY = -1, styleId = cornerStyleId, mark = cornerMark, staggeredMark = cornerStaggerMark})
     if countY > 0 then
         local stepY = (2 * cornerY) / (countY + 1)
         for i = 1, countY do
-            table.insert(rebarPositions, {x = -cornerX - deltaR, y = cornerY - i * stepY, dirX = 1, dirY = 0, styleId = addStyleId, mark = addMark})
+            table.insert(rebarPositions, {x = -cornerX - deltaR, y = cornerY - i * stepY, dirX = 1, dirY = 0, styleId = addStyleId, mark = addMark, staggeredMark = addStaggerMark})
         end
     end
 
@@ -171,7 +218,8 @@ function createLongitudinalRebars(container, styleParameters, cornerX, cornerY, 
                 curve = CreateLineSegment3D(Point3D(pos.x, pos.y, zBottom), Point3D(pos.x, pos.y, zTop))
             end
 
-            container:AddRebar(rStyleId, curve, ReinforcementRole.Structural, pos.mark)
+            local mark = isShifted and pos.staggeredMark or pos.mark
+            container:AddRebar(rStyleId, curve, ReinforcementRole.Structural, mark)
         end
     end
 end
